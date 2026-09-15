@@ -16,3 +16,7 @@ dist/
 /sg_pj-main/
 /참고/
 /참고/
+
+# 브라우저 검증 결과
+/test-results/
+/playwright-report/

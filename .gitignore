@@ -1,0 +1,18 @@
+# 설치 파일과 빌드 결과
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# 계정 정보와 로컬 작업 자료
+.env
+.env.*
+!.env.example
+**/credentials.js
+*.xlsx
+*.XLSX
+*.xls
+*.XLS
+/sg_pj-main/
+/참고/
+/참고/

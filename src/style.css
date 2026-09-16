@@ -204,13 +204,15 @@ input::placeholder { color: var(--muted); opacity: .8; font-size: 11px; }
 .agg-item-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px; }
 
 /* 계정 입력은 간결하게, 변환 기준은 기본으로 펼쳐서 표시합니다. */
-.settings-grid { grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr); align-items: start; }
+.settings-grid { grid-template-columns: 1fr; align-items: start; }
 .accounts-panel { padding: 18px; }
-.accounts-panel .account-card { padding: 10px; }
-.accounts-panel .accounts { gap: 8px; }
-.accounts-panel .credentials { gap: 8px; margin-top: 8px; }
+.accounts-panel .account-card { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: center; gap: 12px; padding: 8px 12px; border-radius: 9px; }
+.accounts-panel .accounts { gap: 6px; margin-top: 12px; }
+.accounts-panel .credentials { grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 0; min-width: 0; }
 .accounts-panel .credentials input { min-height: 34px; padding: 7px 9px; }
-.accounts-panel .institution small { display: none; }
+.accounts-panel .site-tag { display: none; }
+.accounts-panel .institution { font-size: 13px; }
+.accounts-panel .credentials label { min-width: 0; }
 .accounts-panel .section-description { margin-bottom: 12px; }
 .rules-panel .section-description { line-height: 1.7; }
 .rules-panel .check-option small { max-width: 440px; line-height: 1.6; }
@@ -218,4 +220,8 @@ input::placeholder { color: var(--muted); opacity: .8; font-size: 11px; }
 @media (max-width: 760px) {
   .settings-grid, .rules-grid { grid-template-columns: 1fr; }
   .result-actions, .badges-row { flex-wrap: wrap; }
+}
+
+@media (max-width: 520px) {
+  .accounts-panel .account-card { grid-template-columns: 1fr; gap: 8px; }
 }

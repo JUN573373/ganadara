@@ -20,3 +20,6 @@ dist/
 # 브라우저 검증 결과
 /test-results/
 /playwright-report/
+
+# 계정과 업무 정보가 포함된 패킷 원본
+*.chlz

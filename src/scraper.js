@@ -1,67 +1,127 @@
+import { parseOrderList, parseContract } from './extraction.js';
+
 export const SITES = [
   { id: 'ini', name: '아이니', label: '아이니웨딩', baseUrl: 'https://prm.iniwedding.com', homeTitle: '아이니웨딩 PRM' },
   { id: 'swed', name: 'S웨딩', label: 'S웨딩', baseUrl: 'https://prm.s-wed.co.kr', homeTitle: 'S웨딩 PRM' },
 ];
 
-// 두 기관이 같은 발주서 구조를 사용하므로 파싱 규칙을 공유합니다.
-export function parseContract(html, order, type) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  if (!/발\s*주\s*서/.test(doc.body.textContent)) {
-    throw new Error('상세 발주서 형식이 아닙니다. 세션 만료 또는 사이트 변경을 확인해 주세요.');
-  }
-  const root = doc.querySelector('body > div:nth-child(1)');
-  const bride = root?.querySelector(':scope > table:nth-child(2) tr:nth-child(2) td:nth-child(2)');
-  const product = root?.querySelector(':scope > table:nth-child(4) tr:nth-child(2) td:nth-child(3)');
-  const event = root?.querySelector(type === 'RMON'
-    ? ':scope > table:nth-child(3) tr:nth-child(2) td.tdLine'
-    : ':scope > table:nth-child(3) tr:nth-child(2) td.tdEndLine');
-  if (!bride || !product || !event || !bride.textContent.trim()) {
-    throw new Error('발주서의 필수 항목을 읽지 못했습니다. 사이트의 표 구조 변경을 확인해 주세요.');
-  }
-  const text = (selector) => root.querySelector(selector)?.textContent.trim() || '';
-  const productName = product.textContent.replace('수임료차감포함', '').trim();
-  if (type === 'RMON' && !productName.includes('촬영')) return null;
-  const eventText = event.textContent.trim();
-  const eventDate = eventText.match(/(\d{4})-(\d{2})-(\d{2})/);
-  const eventTime = eventText.match(/(?:^|\s)(\d{1,2}:\d{2}(?::\d{2})?)(?:\s|$)/)?.[1] || '';
-  const row = { 발주코드: order.code };
-  if (type === 'RMON') {
-    if (!eventDate) throw new Error('리허설 날짜를 읽지 못했습니다.');
-    const date = new Date(Number(eventDate[1]), Number(eventDate[2]) - 1, Number(eventDate[3]));
-    if (date.getFullYear() !== Number(eventDate[1]) || date.getMonth() + 1 !== Number(eventDate[2]) || date.getDate() !== Number(eventDate[3])) {
-      throw new Error('리허설 날짜가 올바르지 않습니다.');
+/**
+ * 발주 수집 메인 함수:
+ * 1. Vercel 서버리스 API (/api/scrape) 호출 및 SSE 실시간 스트리밍 수신
+ * 2. API가 없는 오프라인/테스트 환경에서는 기존 브라우저 직접 요청으로 fallback
+ */
+export async function scrapeSite({ site, account, options, signal, log, onRow }) {
+  try {
+    return await scrapeViaServerlessApi({ site, account, options, signal, log, onRow });
+  } catch (apiErr) {
+    if (signal?.aborted || apiErr.name === 'AbortError') {
+      throw apiErr;
     }
-    row['날짜'] = eventDate[2] + '/' + eventDate[3] + '(' + '일월화수목금토'[date.getDay()] + ')';
-  }
-  row['담당플래너'] = text(':scope > table:nth-child(2) tr:nth-child(1) td.tdEndLine').split('/')[0].trim();
-  row['신부명'] = bride.textContent.trim();
-  let totalRow = 0;
-  if (type === 'RMON') {
-    for (let index = 2; index <= 9; index++) {
-      if (text(':scope > table:nth-child(4) tr:nth-child(' + index + ') td:nth-child(3)').includes('토탈')) {
-        totalRow = index;
-        break;
-      }
+    // 404이거나 명시적 fallback인 경우 기존 브라우저 직접 수집 시도
+    if (apiErr.isFallback || apiErr.message?.includes('404')) {
+      return await scrapeDirectBrowser({ site, account, options, signal, log, onRow });
     }
-  } else if (text(':scope > table:nth-child(4) tr:nth-child(3) td:nth-child(3)').includes('토탈')) {
-    totalRow = 3;
+    throw apiErr;
   }
-  row['배송지'] = text(':scope > table:nth-child(4) tr:nth-child(' + (totalRow || 3) + ') td:nth-child(2)');
-  if (!totalRow) row['배송지'] += '(확인필요)';
-  row['배송시간'] = '';
-  row['발주부케'] = productName + ' - ' + order.price + '원';
-  if (type !== 'RMON') row['부토니에'] = '';
-  row['특이사항(기타사항)'] = text(':scope > table:nth-child(5) tr td');
-  row[type === 'RMON' ? '리허설장소' : '예식장소'] = text(type === 'RMON'
-    ? ':scope > table:nth-child(3) tr:nth-child(1) td.tdLine'
-    : ':scope > table:nth-child(3) tr:nth-child(1) td.tdEndLine');
-  row[type === 'RMON' ? '리허설시간' : '예식시간'] = eventTime;
-  if (!eventTime) throw new Error('행사 시간을 읽지 못했습니다. 원본 발주서를 확인해 주세요.');
-  return row;
 }
 
-export async function scrapeSite({ site, account, options, signal, log, onRow }) {
-  // 단계별 요청의 시간 제한·오류 처리를 한곳에서 공유합니다.
+/**
+ * Vercel Serverless API (/api/scrape) SSE 스트리밍 수신
+ */
+async function scrapeViaServerlessApi({ site, account, options, signal, log, onRow }) {
+  const payload = {
+    sites: [site.id],
+    accounts: {
+      [site.id]: account,
+    },
+    options: {
+      orderType: options.type,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      onlyUnconfirmed: options.onlyUnconfirmed,
+    },
+  };
+
+  const response = await fetch('/api/scrape', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (response.status === 404) {
+    const err = new Error('API 404 Not Found');
+    err.isFallback = true;
+    throw err;
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`서버 수집 API 오류 (HTTP ${response.status}): ${errText || response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let finalDoneData = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    let currentEvent = 'message';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      if (trimmed.startsWith('event:')) {
+        currentEvent = trimmed.slice(6).trim();
+      } else if (trimmed.startsWith('data:')) {
+        const dataStr = trimmed.slice(5).trim();
+        try {
+          const data = JSON.parse(dataStr);
+          if (currentEvent === 'log') {
+            log(data.level || 'info', data.message || '');
+          } else if (currentEvent === 'done') {
+            finalDoneData = data;
+          } else if (currentEvent === 'error') {
+            throw new Error(data.message || '서버 수집 오류');
+          }
+        } catch (parseErr) {
+          if (currentEvent === 'error') throw parseErr;
+        }
+      }
+    }
+  }
+
+  if (!finalDoneData) {
+    throw new Error(`${site.label} · 서버에서 최종 수집 완료 응답을 받지 못했습니다.`);
+  }
+
+  const siteResults = finalDoneData.results?.[site.id] || [];
+  for (const row of siteResults) {
+    onRow(row);
+  }
+
+  return {
+    total: siteResults.length,
+    failed: finalDoneData.hasPartialError ? 1 : 0,
+    skipped: 0,
+  };
+}
+
+/**
+ * 기존 브라우저 직접 요청 (테스트 모킹 환경용 fallback)
+ */
+async function scrapeDirectBrowser({ site, account, options, signal, log, onRow }) {
   const request = async (stage, path, body) => {
     signal.throwIfAborted();
     log('info', site.label + ' · ' + stage);
@@ -125,42 +185,38 @@ export async function scrapeSite({ site, account, options, signal, log, onRow })
   let ended = false;
   for (let page = 1; page <= 1000; page++) {
     const html = await request('목록 ' + page + '페이지 조회', '/Order/OrderList.php', new URLSearchParams({ ...params, pages: String(page) }));
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    if (doc.title.trim() !== '발주현황') throw new Error(site.label + ' · 목록 조회 실패: 세션이 만료됐거나 응답 형식이 변경됐습니다.');
-    const rows = [...doc.querySelectorAll('tr.ConteTR')];
+    let rows;
+    try {
+      rows = parseOrderList(html);
+    } catch (error) {
+      throw new Error(site.label + ' · 목록 ' + page + '페이지: ' + error.message);
+    }
     if (!rows.length) {
       ended = true;
       log('info', site.label + ' · 마지막 목록 페이지에 도달했습니다.');
       break;
     }
-    const signature = rows.map((row) => row.textContent.trim()).join('\n');
+    const signature = JSON.stringify(rows);
     if (pageSignatures.has(signature)) {
       throw new Error(site.label + ' · 같은 목록 페이지가 반복됩니다. 중복 수집을 막기 위해 중단했습니다.');
     }
     pageSignatures.add(signature);
+    let excluded = 0;
     for (const row of rows) {
-      const status = row.querySelector('td.ConteTD_End_C')?.textContent.trim();
-      if (!status) throw new Error(site.label + ' · 목록의 확인 상태를 읽지 못했습니다. 표 구조를 확인해 주세요.');
-      // "미확인"은 미처리 발주이므로 확인 완료와 구분합니다.
-      if (options.onlyUnconfirmed && status.includes('확인') && !/미\s*확인/.test(status)) {
-        ended = true;
-        log('info', site.label + ' · 확인 완료 발주를 만나 목록 수집을 종료합니다.');
-        break;
+      if (options.onlyUnconfirmed && row.confirmed) {
+        excluded++;
+        continue;
       }
-      const item = row.querySelector('td.ConteTD_L')?.textContent || '';
-      if (options.type === 'RMON' && !item.includes('촬영')) continue;
-      const code = row.querySelectorAll('td.ConteTD_C')[1]?.textContent.trim();
-      const price = row.querySelector('td.ConteTD_R')?.textContent.trim();
-      if (!code || !price) throw new Error(site.label + ' · 발주코드 또는 금액을 읽지 못했습니다.');
-      if (knownCodes.has(code)) {
+      if (options.type === 'RMON' && !row.product.includes('촬영')) continue;
+      if (knownCodes.has(row.code)) {
         log('warn', site.label + ' · 앞서 수집한 발주코드와 겹치는 목록 행을 제외합니다.');
         continue;
       }
-      knownCodes.add(code);
-      orders.push({ code, price });
+      knownCodes.add(row.code);
+      orders.push(row);
     }
+    if (excluded) log('info', site.label + ' · 확인 완료 ' + excluded + '건 제외, 다음 목록도 조회합니다.');
     log('info', site.label + ' · 상세 조회 대상 ' + orders.length + '건');
-    if (ended) break;
   }
   if (!ended) throw new Error(site.label + ' · 목록이 1,000페이지를 넘어 중단했습니다. 조회 기간을 줄여 주세요.');
   let failed = 0;

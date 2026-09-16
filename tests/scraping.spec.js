@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/test';
 import ExcelJS from 'exceljs';
 
+// 실제 응답에서 확인한 행 구조를 가상 값으로 재현합니다.
 const orderRow = (code, status = '미확인', product = '촬영 부케') =>
-  '<tr class="ConteTR"><td class="ConteTD_C">1</td><td class="ConteTD_C">' + code +
-  '</td><td class="ConteTD_L">' + product + '</td><td class="ConteTD_R">90,000</td><td class="ConteTD_End_C">' + status + '</td></tr>';
+  '<tr class="ConteTR"><td class="ConteTD_C">1</td><td class="ConteTD_C">2026-09-01<br>12:30</td>' +
+  '<td class="ConteTD_L order-product">' + product + '</td><td class="ConteTD_R">90,000</td>' +
+  '<td><a onclick="OrderFax(\'' + code + '\', \'O\', \'\')">발주서 보기</a></td>' +
+  '<td class="ConteTD_End_C">' + status + '</td></tr>';
 const list = (rows = '') => '<title>발주현황</title><table>' + rows + '</table>';
 const contract = (product = '본식 부케', total = '토탈', date = '2026-09-12', bride = '가상신부') =>
   '<body><div><h1>발   주   서</h1>' +
@@ -264,4 +267,91 @@ test('실시간 로그·로딩·중지와 일부 결과 다운로드', async ({ 
   await page.locator('#clear-logs').click();
   await expect(page.locator('#logs')).toBeEmpty();
   await expect(page.locator('#log-count')).toHaveText('0');
+});
+
+
+// 실제 패킷의 클래스·버튼·코드 위치만 재현하고 원본 개인정보는 넣지 않습니다.
+test('이미지·버튼 상태와 완료 행 뒤의 다른 페이지도 수집', async ({ page }, testInfo) => {
+  const pendingImage = '<img src="about:blank" onclick="OrderRUN(1)" alt="확인">';
+  const pendingButton = '<button name="idxno" value="가상"><img src="about:blank" alt="확인"></button>';
+  const calls = await mockSites(page, {
+    pages: [
+      orderRow('가상01', pendingImage) + orderRow('완료02', '확인') + orderRow('가상03', pendingButton),
+      orderRow('완료04', '확인') + orderRow('가상05', pendingImage),
+    ],
+  });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 완료');
+  expect(calls.filter(x => x.path.includes('Fixed')).map(x => x.params.get('ContractPlacing_Code'))).toEqual(['가상01', '가상03', '가상05']);
+  expect(calls.filter(x => x.path.includes('OrderList') && x.method === 'POST').map(x => x.params.get('pages'))).toEqual(['1', '2', '3']);
+  const { workbook } = await readDownload(page, testInfo);
+  expect(workbook.getWorksheet('아이니').getColumn(1).values.slice(2)).toEqual(['가상01', '가상03', '가상05']);
+});
+
+test('클래스 순서·추가 속성과 상세 링크의 큰따옴표 코드', async ({ page }) => {
+  const row = '<tr data-test="1" class="extra ConteTR" style="height:40px">' +
+    '<td class="ConteTD_C">2026-09-16</td><td class="ConteTD_C">잘못된값</td>' +
+    '<td class="order-product ConteTD_L extra">촬영 부케</td><td class="extra ConteTD_R">90,000</td>' +
+    '<td><a href="javascript:OrderFax(&quot;F001&quot;, &quot;O&quot;, &quot;&quot;)">보기</a></td>' +
+    '<td class="extra ConteTD_End_C"><img onclick="OrderRUN(1)"></td></tr>';
+  const calls = await mockSites(page, { pages: [row], details: { F001: contract('촬영 부케') } });
+  await fillForm(page, { type: 'RMON' });
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 완료');
+  expect(calls.find(x => x.path.includes('Fixed')).params.get('ContractPlacing_Code')).toBe('F001');
+});
+
+test('상세 링크가 없으면 발주코드 열 제목으로 추출', async ({ page }) => {
+  const row = '<tr><th>상품</th><th>발주 코드</th><th>금액</th><th>확인</th></tr>' +
+    '<tr class="ConteTR"><td class="ConteTD_L">본식</td><td>HEADER001</td><td class="ConteTD_R">90,000</td><td class="ConteTD_End_C">미확인</td></tr>';
+  const calls = await mockSites(page, { pages: [row] });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 완료');
+  expect(calls.find(x => x.path.includes('Fixed')).params.get('ContractPlacing_Code')).toBe('HEADER001');
+});
+
+test('날짜 셀을 발주코드로 추측하지 않고 형식 오류 표시', async ({ page }) => {
+  const row = orderRow('가상01').replace(/<a[^>]*>.*?<\/a>/, '');
+  const calls = await mockSites(page, { pages: [row] });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 실패');
+  await expect(page.locator('#logs')).toContainText('발주코드·상품명·금액');
+  expect(calls.some(x => x.path.includes('Fixed'))).toBe(false);
+});
+
+test('알 수 없는 상태는 미확인이나 완료로 추정하지 않음', async ({ page }) => {
+  await mockSites(page, { pages: [orderRow('가상01', '<img alt="확인">')] });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 실패');
+  await expect(page.locator('#logs')).toContainText('확인 상태를 읽지 못했습니다');
+});
+
+test('행 클래스 변경으로 발주를 못 읽으면 빈 결과로 처리하지 않음', async ({ page }) => {
+  await mockSites(page, { pages: [orderRow('가상01').replace('class="ConteTR"', 'class="ChangedRow"')] });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 실패');
+  await expect(page.locator('#logs')).toContainText('행 구조를 읽지 못했습니다');
+});
+
+test('같은 표시 내용이라도 발주코드가 다르면 다음 페이지 수집', async ({ page }) => {
+  const calls = await mockSites(page, { pages: [orderRow('가상01'), orderRow('가상02')] });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 완료');
+  expect(calls.filter(x => x.path.includes('Fixed'))).toHaveLength(2);
+});
+
+test('패킷 HTML의 스크립트와 이벤트를 실행하지 않음', async ({ page }) => {
+  const row = '<script>window.외부실행=true</script>' +
+    orderRow('가상01').replace('OrderFax(', 'window.외부실행=true;OrderFax(');
+  await mockSites(page, { pages: [row] });
+  await fillForm(page);
+  await page.locator('#start-button').click();
+  await expect(page.locator('#run-status')).toHaveText('수집 완료');
+  expect(await page.evaluate(() => window.외부실행)).toBeUndefined();
 });

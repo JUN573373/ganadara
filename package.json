@@ -14,7 +14,9 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
-    "exceljs": "4.4.0"
+    "cheerio": "^1.2.0",
+    "exceljs": "4.4.0",
+    "tough-cookie": "^6.0.2"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

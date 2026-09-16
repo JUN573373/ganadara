@@ -97,13 +97,14 @@ export function parseContract(html, order, type) {
   const eventText = event.textContent.trim();
   const eventDate = eventText.match(/(\d{4})-(\d{2})-(\d{2})/);
   const eventTime = eventText.match(/(?:^|\s)(\d{1,2}:\d{2}(?::\d{2})?)(?:\s|$)/)?.[1] || '';
-  const row = { 발주코드: order.code };
-  if (type === 'RMON') {
-    if (!eventDate) throw new Error('리허설 날짜를 읽지 못했습니다.');
+  const row = { 발주코드: order.code, 금액: order.price };
+  {
+    if (!eventDate) throw new Error('행사 날짜를 읽지 못했습니다.');
     const date = new Date(Number(eventDate[1]), Number(eventDate[2]) - 1, Number(eventDate[3]));
     if (date.getFullYear() !== Number(eventDate[1]) || date.getMonth() + 1 !== Number(eventDate[2]) || date.getDate() !== Number(eventDate[3])) {
-      throw new Error('리허설 날짜가 올바르지 않습니다.');
+      throw new Error('행사 날짜가 올바르지 않습니다.');
     }
+    row['예식일'] = eventDate[0];
     row['날짜'] = eventDate[2] + '/' + eventDate[3] + '(' + '일월화수목금토'[date.getDay()] + ')';
   }
   row['담당플래너'] = text(rule.planner).split('/')[0].trim();

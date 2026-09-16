@@ -76,6 +76,9 @@ function runUnitTests() {
   // 2. WMON 파싱 테스트
   const wmonResult = session.parseContractDetail(sampleDetailHtmlWMON, { contCd: 'CP269002', price: '250,000' }, 'WMON');
   assert.strictEqual(wmonResult['발주코드'], 'CP269002');
+  assert.strictEqual(wmonResult['예식일'], '2026-10-15');
+  assert.strictEqual(wmonResult['날짜'], '10/15(목)');
+  assert.strictEqual(wmonResult['금액'], '250,000');
   assert.strictEqual(wmonResult['담당플래너'], '이플래너');
   assert.strictEqual(wmonResult['신부명'], '김영희');
   assert.strictEqual(wmonResult['배송지'], '메이크업샵B');

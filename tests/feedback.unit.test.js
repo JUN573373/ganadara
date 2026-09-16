@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import ExcelJS from 'exceljs';
+import { aggregateOrders, generateDeliveryMessage, getWeeklyPresetDates } from '../src/formatter.js';
+import { createBaljuWorkbook } from '../src/excel-export.js';
+
+const base = { 담당플래너: '테스트플래너', 신부명: '테스트신부', 예식일: '2026-10-03',
+  배송지: '테스트샵', 배송시간: '9시', myComment: '내 메모', sangwonComment: '배송 메모' };
+const a = { ...base, 발주코드: 'A', 발주부케: 'S-303 설명 - 90,000원' };
+const b = { ...base, 발주코드: 'B', 발주부케: '[본식추가] 10만원 - 100,000원' };
+const merged = aggregateOrders([a, b, a, b, a]);
+assert.equal(merged.length, 1);
+assert.equal(merged[0]._originalOrders.length, 2);
+assert.equal(merged[0]['금액'], 190000);
+assert.equal(merged[0]._cleanedBouquet, 'S-303 + [추가] 10만원');
+assert.equal(aggregateOrders([a, b, a], 'ini', { enableAggregation: false }).length, 2);
+assert.equal(aggregateOrders([a, { ...b, 예식일: '2026-10-04' }]).length, 2);
+assert.equal(aggregateOrders([{ ...a, 예식일: '' }, { ...b, 예식일: '' }]).length, 2);
+assert.equal(aggregateOrders([{ ...a, 금액: '0' }, b])[0]['금액'], 100000);
+const rows = [...merged, ...aggregateOrders([{ ...a, 발주코드: 'C', 예식일: '2026-10-04' }])];
+const workbook = await createBaljuWorkbook(rows);
+const saved = new ExcelJS.Workbook();
+await saved.xlsx.load(await workbook.xlsx.writeBuffer());
+assert.deepEqual(saved.worksheets.map(s => s.name), ['10.3(토)', '10.4(일)']);
+const sheet = saved.getWorksheet('10.3(토)');
+assert.equal(sheet.getCell('A1').value, '10/3(토)');
+assert.equal(sheet.getCell('A1').font.color.argb, 'FF0070C0');
+assert.equal(sheet.getCell('F3').value, 'S-303 + [추가] 10만원\n합계 190,000원');
+assert.match(sheet.getCell('H3').value, /내 메모/);
+assert.match(sheet.getCell('H3').value, /배송 메모/);
+assert.equal(sheet.pageSetup.orientation, 'landscape');
+assert.equal(sheet.pageSetup.printArea, 'A1:J3');
+const sms = generateDeliveryMessage(merged[0], { template: '{예식월}월 {예식일}일 ({요일}) {배송시간} {배송지} {이상원코멘트}', includeSangwonComment: true });
+assert.match(sms, /10월 3일 \(토\) 9시 테스트샵/);
+assert.match(sms, /배송 메모/);
+assert.doesNotMatch(sms, /\{[^}]+\}/);
+assert.equal(getWeeklyPresetDates(new Date(2026, 8, 18)).startDate, '2026-09-23');
+assert.equal(getWeeklyPresetDates(new Date(2026, 8, 20)).startDate, '2026-09-23');
+console.log('✓ 중복 5행→발주 2건, 합계, 날짜별 탭·서식, 코멘트, 문자 치환 검증 통과');

@@ -5,18 +5,18 @@ import { cleanBouquetName, cleanBrideName, formatNotes } from './formatter.js';
  * 엑셀 시트명 포맷: "9.12(토)"
  */
 function formatSheetName(dateText) {
-  if (!dateText) return '기타';
+  if (!dateText) return '날짜 확인필요';
   const match = dateText.match(/(\d{1,2})\/(\d{1,2})\s*\(([가-힣])\)/);
   if (match) {
     return `${parseInt(match[1], 10)}.${parseInt(match[2], 10)}(${match[3]})`;
   }
   const isoMatch = dateText.match(/(\d{4})-(\d{2})-(\d{2})/);
   if (isoMatch) {
-    const d = new Date(dateText);
+    const d = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
     const dayOfWeek = '일월화수목금토'[d.getDay()] || '';
     return `${parseInt(isoMatch[2], 10)}.${parseInt(isoMatch[3], 10)}(${dayOfWeek})`;
   }
-  return dateText.slice(0, 30);
+  return dateText.replace(/[\\/*?:\[\]]/g, '-').slice(0, 30) || '날짜 확인필요';
 }
 
 /**
@@ -46,6 +46,8 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
     // === 촬영용 시트 단일 생성 ===
     const sheet = wb.addWorksheet('촬영');
 
+    sheet.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0, right: 0, top: 0, bottom: 0, header: 0, footer: 0 }, printTitlesRow: orderType === 'RMON' ? '1:1' : '1:2' };
+    sheet.views = [{ state: 'frozen', ySplit: orderType === 'RMON' ? 1 : 2 }];
     sheet.columns = [
       { width: 15.0 },  // 날짜
       { width: 20.6 },  // 담당플래너
@@ -78,19 +80,19 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
         row['날짜'] || '',
         planner,
         cleanBrideName(row['신부명']),
-        row['배송지'] || '',
+        (row['배송지'] || '') + (row._needsCheck ? ' (확인필요)' : ''),
         row['배송시간'] || '',
-        row._cleanedBouquet || cleanBouquetName(row['발주부케']),
-        row['특이사항'] || '',
+        (row._cleanedBouquet ?? cleanBouquetName(row['발주부케'])) + (row._isAggregated ? `\n합계 ${row._amountText}` : ''),
+        [row['특이사항'], row.myComment && `내 코멘트: ${row.myComment}`, row.sangwonComment && `이상원 코멘트: ${row.sangwonComment}`].filter(Boolean).join('\n'),
         row['리허설장소'] || '',
         row['리허설시간'] || '',
       ]);
 
-      dataRow.height = 36;
+      dataRow.height = Math.max(62.45, ...dataRow.values.filter(value => typeof value === 'string').map(value => value.split('\n').length * 23));
       dataRow.eachCell((cell, colNum) => {
         cell.font = { name: '맑은 고딕', size: 16, bold: true };
         cell.alignment = {
-          horizontal: colNum === 6 || colNum === 7 ? 'left' : 'center',
+          horizontal: 'center',
           vertical: 'middle',
           wrapText: true,
         };
@@ -98,12 +100,13 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
       });
     });
 
+    sheet.pageSetup.printArea = `A1:I${sheet.rowCount}`;
     return wb;
   }
 
   // === 예식일 (WMON): 날짜별 시트 분리 생성 ===
   const dateGroups = new Map();
-  for (const row of aggregatedRows) {
+  for (const row of [...aggregatedRows].sort((a, b) => (a['예식일'] || a['날짜'] || '').localeCompare(b['예식일'] || b['날짜'] || '', 'ko', { numeric: true }))) {
     const rawDate = row['날짜'] || row['예식일'] || '';
     const sheetName = formatSheetName(rawDate);
     if (!dateGroups.has(sheetName)) {
@@ -119,6 +122,8 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
   for (const [sheetName, rows] of dateGroups.entries()) {
     const sheet = wb.addWorksheet(sheetName);
 
+    sheet.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0, right: 0, top: 0, bottom: 0, header: 0, footer: 0 }, printTitlesRow: orderType === 'RMON' ? '1:1' : '1:2' };
+    sheet.views = [{ state: 'frozen', ySplit: orderType === 'RMON' ? 1 : 2 }];
     sheet.columns = [
       { width: 6.0 },   // NO
       { width: 20.6 },  // 담당플래너
@@ -135,7 +140,7 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
     // 1행: 날짜 헤더 타이틀 (예: "9/12(토)")
     const titleRow = sheet.addRow([formatDateTitle(sheetName)]);
     titleRow.height = 24;
-    titleRow.getCell(1).font = { name: '맑은 고딕', size: 14, bold: true };
+    titleRow.getCell(1).font = { name: '맑은 고딕', size: 18, bold: true, color: { argb: sheetName.includes('(일)') ? 'FFFF0000' : sheetName.includes('(토)') ? 'FF0070C0' : 'FF000000' } };
     titleRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
 
     // 2행: 헤더
@@ -159,26 +164,27 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
         idx + 1,
         planner,
         cleanBrideName(row['신부명']),
-        row['배송지'] || '',
+        (row['배송지'] || '') + (row._needsCheck ? ' (확인필요)' : ''),
         row['배송시간'] || '',
-        row._cleanedBouquet || cleanBouquetName(row['발주부케']),
+        (row._cleanedBouquet ?? cleanBouquetName(row['발주부케'])) + (row._isAggregated ? `\n합계 ${row._amountText}` : ''),
         row['부토니에'] || '',
-        row['특이사항'] || '',
+        [row['특이사항'], row.myComment && `내 코멘트: ${row.myComment}`, row.sangwonComment && `이상원 코멘트: ${row.sangwonComment}`].filter(Boolean).join('\n'),
         row['예식장소'] || '',
         row['예식시간'] || '',
       ]);
 
-      dataRow.height = 36;
+      dataRow.height = Math.max(62.45, ...dataRow.values.filter(value => typeof value === 'string').map(value => value.split('\n').length * 23));
       dataRow.eachCell((cell, colNum) => {
         cell.font = { name: '맑은 고딕', size: colNum === 1 ? 12 : 16, bold: true };
         cell.alignment = {
-          horizontal: colNum === 6 || colNum === 8 ? 'left' : 'center',
+          horizontal: 'center',
           vertical: 'middle',
           wrapText: true,
         };
         cell.border = thinBorder;
       });
     });
+    sheet.pageSetup.printArea = `A1:J${sheet.rowCount}`;
   }
 
   return wb;

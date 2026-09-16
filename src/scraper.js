@@ -67,6 +67,7 @@ async function scrapeViaServerlessApi({ site, account, options, signal, log, onR
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
   let finalDoneData = null;
+  let currentEvent = 'message';
 
   while (true) {
     const { done, value } = await reader.read();
@@ -76,7 +77,6 @@ async function scrapeViaServerlessApi({ site, account, options, signal, log, onR
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
 
-    let currentEvent = 'message';
 
     for (const line of lines) {
       const trimmed = line.trim();

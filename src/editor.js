@@ -2,6 +2,10 @@ import { aggregateOrders, cleanBouquetName, cleanBrideName, generateDeliveryMess
 import { loadConfig, saveConfig, resetConfig, DEFAULT_CONFIG } from './config.js';
 
 let currentRows = [];
+const manualEdits = new Map();
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+})[char]);
 let currentOptions = {};
 let rawScrapedResults = [];
 let filterNeedsCheckOnly = false;
@@ -103,6 +107,7 @@ function initRulesPanel() {
       const isHidden = rulesBody.hidden;
       rulesBody.hidden = !isHidden;
       toggleRulesBtn.textContent = isHidden ? '설정 접기 ✕' : '설정 펼치기 ⚙';
+      toggleRulesBtn.setAttribute('aria-expanded', String(isHidden));
     });
   }
 
@@ -165,9 +170,9 @@ function renderRulesTable() {
   currentConfig.bouquetRules.forEach((rule, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input class="rules-input rule-pattern" value="${rule.pattern || ''}" placeholder="예: VS플러스" data-idx="${idx}" /></td>
+      <td><input class="rules-input rule-pattern" value="${escapeHtml(rule.pattern)}" placeholder="예: VS플러스" data-idx="${idx}" /></td>
       <td style="text-align: center; color: var(--muted); font-size: 10px;">➔</td>
-      <td><input class="rules-input rule-replacement" value="${rule.replacement || ''}" placeholder="예: VS+" data-idx="${idx}" /></td>
+      <td><input class="rules-input rule-replacement" value="${escapeHtml(rule.replacement)}" placeholder="예: VS+" data-idx="${idx}" /></td>
       <td style="text-align: center;"><button type="button" class="rules-del-btn" data-idx="${idx}" title="삭제">✕</button></td>
     `;
 
@@ -206,6 +211,7 @@ function reapplyConfig() {
  * 수집된 원본 데이터를 받아서 합산 정제 후 미리보기 렌더링
  */
 export function setScrapedData(results, options) {
+  if (results !== rawScrapedResults) manualEdits.clear();
   rawScrapedResults = results || [];
   currentOptions = options || {};
   let combined = [];
@@ -217,7 +223,7 @@ export function setScrapedData(results, options) {
     combined = combined.concat(siteAggregated);
   }
 
-  currentRows = combined;
+  currentRows = combined.map(row => Object.assign(row, manualEdits.get(row._key)));
   renderTable();
   if (resultPanel) resultPanel.hidden = false;
 }
@@ -230,19 +236,20 @@ function renderTable() {
   previewTbody.innerHTML = '';
 
   const totalCount = currentRows.length;
+  const sourceCount = currentRows.reduce((sum, row) => sum + row._originalOrders.length, 0);
   const aggCount = currentRows.filter(r => r._isAggregated).length;
   const needsCheckCount = currentRows.filter(r => r._needsCheck).length;
 
   if (resultBadges) {
     resultBadges.innerHTML = `
-      <span class="badge">총 ${totalCount}건</span>
-      ${aggCount > 0 ? `<span class="badge agg">합산 ${aggCount}건</span>` : ''}
+      <span class="badge">발주코드 ${sourceCount}건 → 결과 ${totalCount}행</span>
+      ${aggCount > 0 ? `<span class="badge agg">합산 고객 ${aggCount}명</span>` : ''}
       ${needsCheckCount > 0 ? `<span class="badge warn">확인필요 ${needsCheckCount}건</span>` : ''}
     `;
   }
 
   if (resultSummary) {
-    resultSummary.textContent = `설정 기준이 자동 적용되었습니다. 셀 값을 직접 수정하면 엑셀과 배송문자에 즉시 반영됩니다.`;
+    resultSummary.textContent = `발주코드 중복은 제외합니다. 합산 금액은 부케 아래와 엑셀에 표시되며, 배송문자는 각 행의 최종 수정값으로 생성합니다.`;
   }
 
   const rowsToDisplay = filterNeedsCheckOnly
@@ -264,41 +271,42 @@ function renderTable() {
       ? `${row['담당플래너']}-S웨딩`
       : row['담당플래너'] || '';
 
-    const cleanedBouquet = row._cleanedBouquet || cleanBouquetName(row['발주부케'], currentConfig.bouquetRules);
+    const cleanedBouquet = row._cleanedBouquet ?? cleanBouquetName(row['발주부케'], currentConfig.bouquetRules);
     const rawBouquet = row['발주부케'] || '';
 
     tr.innerHTML = `
       <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
-      <td style="text-align: center;">${row['날짜'] || row['예식일'] || ''}</td>
-      <td><strong>${plannerName}</strong></td>
-      <td>${cleanBrideName(row['신부명'])}</td>
+      <td style="text-align: center;">${escapeHtml(row['날짜'] || row['예식일'] || '')}</td>
+      <td><strong>${escapeHtml(plannerName)}</strong></td>
+      <td>${escapeHtml(cleanBrideName(row['신부명']))}</td>
       <td>
         <div class="cell-shipping-box">
-          <input class="cell-input col-shipping" value="${row['배송지'] || ''}" data-idx="${idx}" />
+          <input class="cell-input col-shipping" value="${escapeHtml(row['배송지'] || '')}" data-idx="${idx}" />
           ${row._needsCheck ? `<span class="badge warn">확인필요</span>` : ''}
         </div>
       </td>
       <td>
-        <input class="cell-input col-shipping-time" placeholder="배송시간" value="${row['배송시간'] || ''}" data-idx="${idx}" style="min-width: 85px;" />
+        <input class="cell-input col-shipping-time" placeholder="배송시간" value="${escapeHtml(row['배송시간'] || '')}" data-idx="${idx}" style="min-width: 85px;" />
       </td>
       <td>
         <div class="bouquet-cell-box">
-          <input class="cell-input col-bouquet bouquet-clean" value="${cleanedBouquet}" data-idx="${idx}" />
-          <span class="bouquet-raw" title="${rawBouquet}">${rawBouquet}</span>
+          <input class="cell-input col-bouquet bouquet-clean" value="${escapeHtml(cleanedBouquet)}" data-idx="${idx}" />
+          <strong class="bouquet-total">${row._isAggregated ? '합계 ' : '금액 '}${escapeHtml(row._amountText)}</strong>
+          <span class="bouquet-raw" title="${escapeHtml(rawBouquet)}">${escapeHtml(rawBouquet)}</span>
           ${row._isAggregated ? `<button type="button" class="badge agg btn-view-agg" data-idx="${idx}" style="margin-top: 2px;">합산 ${row._originalOrders.length}건 보기</button>` : ''}
         </div>
       </td>
-      <td style="text-align: center;">${row['부토니에'] || ''}</td>
+      <td style="text-align: center;">${escapeHtml(row['부토니에'] || '')}</td>
       <td>
-        <input class="cell-input col-notes" value="${row['특이사항'] || row['특이사항(기타사항)'] || ''}" data-idx="${idx}" style="min-width: 220px;" />
+        <input class="cell-input col-notes" value="${escapeHtml(row['특이사항'] || row['특이사항(기타사항)'] || '')}" data-idx="${idx}" style="min-width: 220px;" />
       </td>
-      <td>${row['예식장소'] || row['리허설장소'] || ''}</td>
-      <td style="text-align: center;">${row['예식시간'] || row['리허설시간'] || ''}</td>
+      <td>${escapeHtml(row['예식장소'] || row['리허설장소'] || '')}</td>
+      <td style="text-align: center;">${escapeHtml(row['예식시간'] || row['리허설시간'] || '')}</td>
       <td>
-        <input class="cell-input col-mycomment" placeholder="내 메모" value="${row.myComment || ''}" data-idx="${idx}" style="min-width: 110px;" />
+        <input class="cell-input col-mycomment" placeholder="내 메모" value="${escapeHtml(row.myComment || '')}" data-idx="${idx}" style="min-width: 110px;" />
       </td>
       <td>
-        <input class="cell-input col-sangwoncomment" placeholder="코멘트" value="${row.sangwonComment || ''}" data-idx="${idx}" style="min-width: 110px;" />
+        <input class="cell-input col-sangwoncomment" placeholder="코멘트" value="${escapeHtml(row.sangwonComment || '')}" data-idx="${idx}" style="min-width: 110px;" />
       </td>
       <td style="text-align: center;">
         <button type="button" class="button secondary small btn-open-sms" data-idx="${idx}">배송문자 ✉</button>
@@ -308,27 +316,33 @@ function renderTable() {
     // 인라인 입력 변경 이벤트 바인딩
     tr.querySelector('.col-shipping').addEventListener('input', (e) => {
       row['배송지'] = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), '배송지': e.target.value });
       e.target.classList.add('modified');
     });
     tr.querySelector('.col-shipping-time').addEventListener('input', (e) => {
       row['배송시간'] = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), '배송시간': e.target.value });
       e.target.classList.add('modified');
     });
     tr.querySelector('.col-bouquet').addEventListener('input', (e) => {
       row._cleanedBouquet = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), '_cleanedBouquet': e.target.value });
       e.target.classList.add('modified');
     });
     tr.querySelector('.col-notes').addEventListener('input', (e) => {
       row['특이사항'] = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), '특이사항': e.target.value });
       row['특이사항(기타사항)'] = e.target.value;
       e.target.classList.add('modified');
     });
     tr.querySelector('.col-mycomment').addEventListener('input', (e) => {
       row.myComment = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), 'myComment': e.target.value });
       e.target.classList.add('modified');
     });
     tr.querySelector('.col-sangwoncomment').addEventListener('input', (e) => {
       row.sangwonComment = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), 'sangwonComment': e.target.value });
       e.target.classList.add('modified');
     });
 
@@ -357,7 +371,7 @@ function openSmsModal(row) {
   const bride = cleanBrideName(row['신부명']);
   const date = row['날짜'] || row['예식일'] || '';
   smsModalTitle.textContent = `${bride}신부님 배송안내 문자 (${date})`;
-  smsIncludeSangwon.checked = !!row.sangwonComment;
+  smsIncludeSangwon.checked = false;
   smsText.value = generateDeliveryMessage(row, {
     includeSangwonComment: smsIncludeSangwon.checked,
     template: currentConfig.smsTemplate,
@@ -379,11 +393,11 @@ function openAggModal(row) {
     div.className = 'agg-item';
     div.innerHTML = `
       <div class="agg-item-header">
-        <span>#${idx + 1} 발주코드: ${orig['발주코드'] || '-'}</span>
-        <span>금액: ${orig.price || '-'}원</span>
+        <span>#${idx + 1} 발주코드: ${escapeHtml(orig['발주코드'] || '-')}</span>
+        <span>금액: ${orig['금액'] === null ? '확인필요' : Number(orig['금액']).toLocaleString('ko-KR') + '원'}</span>
       </div>
-      <div><strong>상품명:</strong> ${orig['발주부케'] || '-'}</div>
-      <div style="font-size: 11px; color: var(--muted); margin-top: 4px;"><strong>특이사항:</strong> ${orig['특이사항(기타사항)'] || orig['특이사항'] || '없음'}</div>
+      <div><strong>상품명:</strong> ${escapeHtml(orig['발주부케'] || '-')}</div>
+      <div style="font-size: 11px; color: var(--muted); margin-top: 4px;"><strong>특이사항:</strong> ${escapeHtml(orig['특이사항(기타사항)'] || orig['특이사항'] || '없음')}</div>
     `;
     aggModalList.appendChild(div);
   });

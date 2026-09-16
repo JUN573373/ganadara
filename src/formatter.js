@@ -201,76 +201,61 @@ export function cleanShippingPlace(rawPlace) {
  */
 export function aggregateOrders(rawList, siteKey = 'ini', config = null) {
   const cfg = config || DEFAULT_CONFIG;
-  const enableAgg = cfg.enableAggregation !== false;
-  const enableOut = cfg.enableOutTime !== false;
-
   const groups = new Map();
+  const seenCodes = new Set();
 
-  for (const item of rawList) {
+  for (const [index, source] of rawList.entries()) {
+    const code = String(source['발주코드'] || '').trim();
+    // 같은 발주코드가 여러 페이지에서 반복되어도 금액은 한 번만 반영합니다.
+    if (code && seenCodes.has(code)) continue;
+    if (code) seenCodes.add(code);
+    const item = { ...source };
     const planner = (item['담당플래너'] || '').trim();
-    const bride = cleanBrideName(item['신부명']);
-    const date = (item['날짜'] || item['예식일'] || '').trim();
-
-    // 합산 미사용 시 행마다 고유 키 부여
-    const key = enableAgg
-      ? `${siteKey}_${date}_${planner}_${bride}`
-      : `${siteKey}_${date}_${planner}_${bride}_${item['발주코드'] || Math.random()}`;
-
-    // 배송지 확인필요 분리
-    const rawShipping = item['배송지'] || '';
-    const { place: cleanPlace, needsCheck } = cleanShippingPlace(rawShipping);
-
+    const bride = (item['신부명'] || '').trim();
+    const date = (item['예식일'] || item['날짜'] || '').trim();
+    const identity = code || `행-${index}`;
+    const key = JSON.stringify([siteKey, date, planner, bride,
+      cfg.enableAggregation !== false && date && planner && bride ? '' : identity]);
+    const priceText = item['금액'] ?? item.price ??
+      String(item['발주부케'] || '').match(/ -\s*([\d,]+)\s*원\s*$/)?.[1];
+    const price = priceText == null || String(priceText).trim() === ''
+      ? null : Number(String(priceText).replace(/[,원\s]/g, ''));
+    item['금액'] = Number.isFinite(price) ? price : null;
+    const { place, needsCheck } = cleanShippingPlace(item['배송지']);
     if (!groups.has(key)) {
-      groups.set(key, {
-        ...item,
-        _site: siteKey,
-        _key: key,
-        _isAggregated: false,
-        _originalOrders: [item],
-        // 배송지에서 '(확인필요)' 텍스트는 제외하고 순수 명칭만 저장
-        배송지: cleanPlace,
-        _needsCheck: needsCheck,
-        // 사용자 코멘트 기본값
-        myComment: item.myComment || '',
-        sangwonComment: item.sangwonComment || '',
-      });
-    } else {
-      const existing = groups.get(key);
-      existing._isAggregated = true;
-      existing._originalOrders.push(item);
-      if (needsCheck) existing._needsCheck = true;
-
-      // 발주부케 병합
-      const currentBouquet = existing['발주부케'] || '';
-      const newBouquet = item['발주부케'] || '';
-      if (newBouquet && !currentBouquet.includes(newBouquet)) {
-        existing['발주부케'] = `${currentBouquet} + ${newBouquet}`;
-      }
-
-      // 특이사항 병합
-      const currentNotes = existing['특이사항(기타사항)'] || existing['특이사항'] || '';
-      const newNotes = item['특이사항(기타사항)'] || item['특이사항'] || '';
-      if (newNotes && !currentNotes.includes(newNotes)) {
-        existing['특이사항'] = currentNotes ? `${currentNotes} / ${newNotes}` : newNotes;
-        existing['특이사항(기타사항)'] = existing['특이사항'];
-      }
-
-      // 빈 필드 채우기
-      if (!existing['배송지'] && cleanPlace) existing['배송지'] = cleanPlace;
-      if (!existing['예식장소'] && item['예식장소']) existing['예식장소'] = item['예식장소'];
-      if (!existing['예식시간'] && item['예식시간']) existing['예식시간'] = item['예식시간'];
+      groups.set(key, { ...item, 배송지: place, _site: siteKey, _key: key,
+        _isAggregated: false, _originalOrders: [], _needsCheck: needsCheck || !date,
+        myComment: item.myComment || '', sangwonComment: item.sangwonComment || '' });
     }
+    const row = groups.get(key);
+    row._originalOrders.push(item);
+    row._needsCheck ||= needsCheck;
   }
 
-  return Array.from(groups.values()).map((row) => {
-    // 부케명 사용자 정의 변환 규칙 적용
-    row._cleanedBouquet = cleanBouquetName(row['발주부케'], cfg.bouquetRules);
-
-    // 특이사항 정제
-    const rawNote = row['특이사항(기타사항)'] || row['특이사항'] || '';
-    row['특이사항'] = enableOut ? formatNotes(rawNote, row['예식시간']) : rawNote;
+  return [...groups.values()].map(row => {
+    const orders = row._originalOrders;
+    row._isAggregated = orders.length > 1;
+    const products = [...new Set(orders.map(item => item['발주부케']).filter(Boolean))];
+    row['발주부케'] = products.join(' + ');
+    // 각 상품을 먼저 정제해야 두 번째 상품이나 추가금이 사라지지 않습니다.
+    row._cleanedBouquet = [...new Set(products.map(name => cleanBouquetName(name, cfg.bouquetRules)))].join(' + ');
+    row['금액'] = orders.every(item => item['금액'] !== null)
+      ? orders.reduce((sum, item) => sum + item['금액'], 0) : null;
+    row._amountText = row['금액'] === null ? '금액 확인필요' : `${row['금액'].toLocaleString('ko-KR')}원`;
+    const notes = [...new Set(orders.map(item => item['특이사항(기타사항)'] || item['특이사항']).filter(Boolean))];
+    for (const field of ['배송지', '배송시간', '부토니에', '예식장소', '예식시간', '리허설장소', '리허설시간']) {
+      const values = [...new Set(orders.map(item => field === '배송지'
+        ? cleanShippingPlace(item[field]).place : item[field]).filter(Boolean))];
+      if (!row[field]) row[field] = values[0] || '';
+      if (values.length > 1) {
+        notes.push(`${field} 상이: ${values.join(' / ')}`);
+        row._needsCheck = true;
+      }
+    }
+    if (row._isAggregated && row['금액'] === null) row._needsCheck = true;
+    const rawNote = notes.join(' / ');
+    row['특이사항'] = cfg.enableOutTime !== false ? formatNotes(rawNote) : rawNote;
     row['특이사항(기타사항)'] = row['특이사항'];
-
     return row;
   });
 }
@@ -283,7 +268,7 @@ export function getWeeklyPresetDates(baseDate = new Date()) {
   const current = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
   const currentDay = current.getDay(); // 0: 일, 1: 월, 2: 화, 3: 수, 4: 목, 5: 금, 6: 토
 
-  const daysUntilNextWed = (3 - currentDay + 7) % 7 + 7;
+  const daysUntilNextWed = 9 - ((currentDay + 6) % 7);
   const nextWed = new Date(current);
   nextWed.setDate(current.getDate() + (daysUntilNextWed === 7 ? 7 : daysUntilNextWed));
 
@@ -320,18 +305,16 @@ export function generateDeliveryMessage(row, options = {}) {
   } else {
     const isoMatch = dateText.match(/(\d{4})-(\d{2})-(\d{2})/);
     if (isoMatch) {
-      const d = new Date(dateText);
+      const d = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
       const dayOfWeek = '일월화수목금토'[d.getDay()] || '';
       formattedDate = `${parseInt(isoMatch[2], 10)}월 ${parseInt(isoMatch[3], 10)}일 (${dayOfWeek})`;
     }
   }
 
   const bride = cleanBrideName(row['신부명']) || '신부';
-  const bouquet = row._cleanedBouquet || cleanBouquetName(row['발주부케']) || row['발주부케'] || '발주부케';
+  const bouquet = (row._cleanedBouquet ?? cleanBouquetName(row['발주부케'])) || '[발주부케 확인필요]';
   const shippingTime = (row['배송시간'] || '').trim();
   const shippingPlace = (row['배송지'] || '').trim();
-
-  const deliverySchedule = shippingTime ? `${shippingTime} ${shippingPlace}` : `${shippingPlace}`;
 
   let sangwonNote = '';
   if (includeSangwonComment && row.sangwonComment) {
@@ -340,11 +323,15 @@ export function generateDeliveryMessage(row, options = {}) {
 
   const rawTemplate = template || DEFAULT_CONFIG.smsTemplate;
 
-  return rawTemplate
-    .replace(/\{예식일자\}|\{예식월\}월\s*\{예식일\}일\s*\(\{요일\}\)/g, formattedDate)
-    .replace(/\{신부명\}/g, bride)
-    .replace(/\{발주부케\}/g, bouquet)
-    .replace(/\{배송일정\}|\{배송시간\}\{배송지\}/g, deliverySchedule)
-    .replace(/\{이상원코멘트\}/g, sangwonNote)
-    .trim();
+  const parts = formattedDate.match(/(\d+)월\s*(\d+)일\s*\(([가-힣])\)/);
+  const fields = {
+    예식일자: formattedDate || '[예식일 확인필요]',
+    예식월: parts?.[1] || '[월 확인필요]', 예식일: parts?.[2] || '[일 확인필요]',
+    요일: parts?.[3] || '[요일 확인필요]', 신부명: bride,
+    발주부케: bouquet, 배송시간: shippingTime || '[배송시간 확인필요]',
+    배송지: shippingPlace || '[배송지 확인필요]',
+    배송일정: `${shippingTime || '[배송시간 확인필요]'} ${shippingPlace || '[배송지 확인필요]'}`,
+    이상원코멘트: sangwonNote,
+  };
+  return rawTemplate.replace(/\{([^{}]+)\}/g, (token, key) => fields[key] ?? token).trim();
 }

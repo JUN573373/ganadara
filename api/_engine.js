@@ -154,12 +154,14 @@ export class ScrapeSession {
     }
 
     let paging = 1;
-    let isPagingEnd = false;
+    this.failedCount = 0;
     const codeArr = [];
+    const knownCodes = new Set();
+    const pageSignatures = new Set();
 
     onLog('info', `${this.site.label} · 발주 목록 조회 시작 (${startDate} ~ ${endDate})`);
 
-    while (!isPagingEnd) {
+    while (true) {
       if (signal?.aborted) throw new Error('사용자에 의해 작업이 취소되었습니다.');
 
       const postOrderBody = new URLSearchParams({
@@ -191,6 +193,10 @@ export class ScrapeSession {
         break;
       }
 
+      const signature = $rows.toArray().map(row => $page.html(row)).join('|');
+      if (pageSignatures.has(signature)) throw new Error('동일 목록 페이지가 반복되어 수집을 중단했습니다.');
+      pageSignatures.add(signature);
+
       let pageFoundCount = 0;
       let pageTargetCount = 0;
       let pageConfirmedSkipped = 0;
@@ -203,14 +209,13 @@ export class ScrapeSession {
 
         // 확인 상태 컬럼 체크
         const statusText = $row.find('td.ConteTD_End_C').text().trim();
-        const hasPendingButton = $row.find('td.ConteTD_End_C button, td.ConteTD_End_C img[onclick*="OrderRUN"]').length > 0;
-        const isConfirmed = statusText.includes('확인') && !hasPendingButton;
+        const hasPendingButton = $row.find('td.ConteTD_End_C button:not(:disabled), td.ConteTD_End_C [onclick*="OrderRUN"]').length > 0 || statusText.includes('미확인');
+        const isConfirmed = /^(확인|확인완료)$/.test(statusText.replace(/\s+/g, '')) && !hasPendingButton;
+        if (!hasPendingButton && !isConfirmed) throw new Error('발주 확인 상태를 읽지 못했습니다.');
 
         if (onlyUnconfirmed && isConfirmed) {
           pageConfirmedSkipped++;
-          // 확인 건을 만났을 때 페이징 즉시 종료 로직
-          isPagingEnd = true;
-          break;
+          continue;
         }
 
         // RMON(리허설)인 경우 상품명에 '촬영'이 들어간 건만 필터
@@ -223,17 +228,19 @@ export class ScrapeSession {
 
         // 발주코드 추출 (OrderFax 호출 인자 또는 컬럼)
         let contCd = '';
-        const orderFaxHtml = $row.find('[onclick*="OrderFax"], [href*="OrderFax"]').attr('onclick') || '';
+        const orderLink = $row.find('[onclick*="OrderFax"], [href*="OrderFax"]').first();
+        const orderFaxHtml = orderLink.attr('onclick') || orderLink.attr('href') || '';
         const matchFax = orderFaxHtml.match(/OrderFax\s*\(\s*['"]([^'"]+)['"]/);
         if (matchFax) {
           contCd = matchFax[1];
         } else {
-          contCd = $row.find('td.ConteTD_C').eq(1).text().trim();
+          throw new Error('상세 보기의 발주코드를 읽지 못했습니다.');
         }
 
         const price = $row.find('td.ConteTD_R').text().trim();
 
-        if (contCd) {
+        if (contCd && !knownCodes.has(contCd)) {
+          knownCodes.add(contCd);
           codeArr.push({ contCd, price });
           pageTargetCount++;
         }
@@ -241,17 +248,8 @@ export class ScrapeSession {
 
       onLog('info', `${this.site.label} · ${paging}페이지 ${pageFoundCount}건 (대상 ${pageTargetCount}건 추가, 누적 ${codeArr.length}건)`);
 
-      if (isPagingEnd) {
-        onLog('info', `${this.site.label} · 확인 완료 건 도달로 추가 조회 중단`);
-        break;
-      }
-
       paging++;
-      // 안전장치: 최대 15페이지 초과 시 중단
-      if (paging > 15) {
-        onLog('warn', `${this.site.label} · 최대 조회 페이지(15p) 도달`);
-        break;
-      }
+      if (paging > 1000) throw new Error('최대 조회 페이지를 초과했습니다. 조회 기간을 줄여 주세요.');
     }
 
     onLog('info', `${this.site.label} · 상세 발주서 수집 대상 총 ${codeArr.length}건`);
@@ -285,6 +283,7 @@ export class ScrapeSession {
           detailedOrders.push(parsed);
         }
       } catch (err) {
+        this.failedCount++;
         onLog('warn', `${this.site.label} · [${item.contCd}] 상세 수집 실패: ${err.message}`);
       }
 
@@ -303,7 +302,17 @@ export class ScrapeSession {
       throw new Error('상세 발주서 형식이 아닙니다.');
     }
 
-    const result = { 발주코드: order.contCd };
+    const result = { 발주코드: order.contCd, 금액: order.price };
+    const eventCell = type === 'RMON' ? 'td.tdLine' : 'td.tdEndLine';
+    const event = $(`body > div:nth-child(1) > table:nth-child(3) tr:nth-child(2) ${eventCell}`).text();
+    const eventDate = event.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!eventDate) throw new Error('행사 날짜를 읽지 못했습니다.');
+    const date = new Date(Number(eventDate[1]), Number(eventDate[2]) - 1, Number(eventDate[3]));
+    if (date.getFullYear() !== +eventDate[1] || date.getMonth() + 1 !== +eventDate[2] || date.getDate() !== +eventDate[3]) {
+      throw new Error('행사 날짜가 올바르지 않습니다.');
+    }
+    result['예식일'] = eventDate[0];
+    result['날짜'] = `${eventDate[2]}/${eventDate[3]}(${'일월화수목금토'[date.getDay()]})`;
     const planner = $('body > div:nth-child(1) > table:nth-child(2) tr:nth-child(1) td.tdEndLine').text().split('/')[0].trim();
     const bride = $('body > div:nth-child(1) > table:nth-child(2) tr:nth-child(2) td:nth-child(2)').text().trim();
     const rawProduct = $('body > div:nth-child(1) > table:nth-child(4) tr:nth-child(2) td:nth-child(3)').text().replace('수임료차감포함', '').trim();
@@ -356,7 +365,7 @@ export class ScrapeSession {
 
       const isTotal = $('body > div:nth-child(1) > table:nth-child(4) tr:nth-child(3) td:nth-child(3)').text();
       let shipping = $('body > div:nth-child(1) > table:nth-child(4) tr:nth-child(3) td:nth-child(2)').text().trim();
-      if (!isTotal.includes('토탈')) {
+      if (!/본식|토탈/.test(isTotal)) {
         shipping += '(확인필요)';
       }
       result['배송지'] = shipping;

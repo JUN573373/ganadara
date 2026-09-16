@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
   // 클라이언트 연결 종료 감지
   let isClientClosed = false;
-  req.on('close', () => {
+  res.on('close', () => {
     isClientClosed = true;
   });
 
@@ -86,6 +86,7 @@ export default async function handler(req, res) {
           },
         });
 
+        hasPartialError ||= session.failedCount > 0;
         finalResults[siteKey] = siteOrders;
       } catch (siteErr) {
         hasPartialError = true;

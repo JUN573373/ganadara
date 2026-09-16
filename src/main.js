@@ -1,5 +1,8 @@
 import './style.css';
 import { SITES, scrapeSite } from './scraper.js';
+import { getWeeklyPresetDates } from './formatter.js';
+import { initEditor, setScrapedData, getCurrentRows } from './editor.js';
+import { downloadBaljuExcel } from './excel-export.js';
 
 const form = document.querySelector('#scrape-form');
 const settings = document.querySelector('#settings');
@@ -17,6 +20,9 @@ let controller = null;
 let results = [];
 let runOptions = null;
 let redactions = [];
+
+// 에디터 및 모달 이벤트 등록
+initEditor();
 
 function log(level, message) {
   for (const secret of redactions) {
@@ -46,6 +52,14 @@ function log(level, message) {
 function setPreset() {
   const preset = document.querySelector('#date-preset').value;
   if (preset === 'custom') return;
+
+  if (preset === 'weekly') {
+    const weekly = getWeeklyPresetDates();
+    startDate.value = weekly.startDate;
+    endDate.value = weekly.endDate;
+    return;
+  }
+
   const today = new Date();
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const end = new Date(start);
@@ -176,10 +190,12 @@ form.addEventListener('submit', async (event) => {
     status.textContent = cancelled ? '수집 중지' : incomplete ? (total ? '일부 수집' : '수집 실패') : '수집 완료';
     if (total) {
       resultPanel.hidden = false;
-      document.querySelector('#result-title').textContent = incomplete ? '일부 수집 결과' : '수집 결과';
+      document.querySelector('#result-title').textContent = incomplete ? '일부 수집 결과' : '발주체크 편집 & 미리보기';
       document.querySelector('#result-summary').textContent = results.map((item) => item.site.label + ' ' + item.rows.length + '건 · ' + item.status).join(' / ');
-      downloadButton.textContent = incomplete ? '일부 결과 엑셀 다운로드 ↓' : '엑셀 다운로드 ↓';
-      log(incomplete ? 'warn' : 'success', '총 ' + total + '건을 내려받을 수 있습니다.' + (incomplete ? ' 완료되지 않은 기관·항목이 포함된 일부 결과입니다.' : ''));
+      downloadButton.textContent = incomplete ? '일부 결과 발주체크 엑셀 다운로드 ↓' : '발주체크 엑셀 다운로드 ↓';
+      log(incomplete ? 'warn' : 'success', '총 ' + total + '건이 수집되었습니다. 아래 표에서 확인 및 수정한 뒤 엑셀을 내려받을 수 있습니다.');
+      // 발주체크 에디터 테이블 렌더링
+      setScrapedData(results, runOptions);
     } else {
       log(incomplete ? 'warn' : 'info', incomplete ? '수집이 완료되지 않았습니다. 위 오류 로그를 확인해 주세요.' : '조회 조건에 해당하는 발주가 없어 파일을 생성하지 않습니다.');
     }
@@ -198,50 +214,17 @@ form.addEventListener('submit', async (event) => {
 });
 
 downloadButton.addEventListener('click', async () => {
-  if (!runOptions || !results.some((item) => item.rows.length) || controller) return;
+  const currentRows = getCurrentRows();
+  if (!runOptions || currentRows.length === 0 || controller) return;
   downloadButton.disabled = true;
   startButton.disabled = true;
   try {
-    log('info', '엑셀 파일을 준비하고 있습니다.');
-    const { default: ExcelJS } = await import('exceljs');
-    const workbook = new ExcelJS.Workbook();
-    const isRehearsal = runOptions.type === 'RMON';
-    const headers = isRehearsal
-      ? ['발주코드', '날짜', '담당플래너', '신부명', '배송지', '배송시간', '발주부케', '특이사항(기타사항)', '리허설장소', '리허설시간']
-      : ['발주코드', '담당플래너', '신부명', '배송지', '배송시간', '발주부케', '부토니에', '특이사항(기타사항)', '예식장소', '예식시간'];
-    for (const result of results) {
-      const sheet = workbook.addWorksheet(result.site.name);
-      sheet.columns = headers.map((header) => ({
-        header, key: header, width: header.includes('특이사항') ? 55 : header === '발주부케' ? 35 : header.includes('장소') || header === '배송지' ? 25 : 16,
-      }));
-      for (const row of result.rows) sheet.addRow(row);
-      sheet.getRow(1).font = { bold: true };
-      sheet.views = [{ state: 'frozen', ySplit: 1 }];
-      sheet.eachRow((row) => { row.alignment = { vertical: 'top', wrapText: true }; });
-    }
-    const incomplete = results.some((item) => item.status !== '완료');
-    if (incomplete) {
-      const sheet = workbook.addWorksheet('수집현황');
-      sheet.columns = [
-        { header: '기관', key: 'site', width: 16 },
-        { header: '상태', key: 'status', width: 16 },
-        { header: '수집 건수', key: 'count', width: 14 },
-        { header: '확인 사항', key: 'reason', width: 70 },
-      ];
-      for (const item of results) sheet.addRow({ site: item.site.label, status: item.status, count: item.rows.length, reason: item.reason || (item.status === '대기' ? '중지로 인해 실행하지 않음' : '') });
-    }
-    const buffer = await workbook.xlsx.writeBuffer();
-    const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = (isRehearsal ? '촬영용_' : '예식일_') + runOptions.startDate + '_to_' + runOptions.endDate + (incomplete ? '_일부수집' : '') + '.xlsx';
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-    log('success', '엑셀 파일 다운로드를 요청했습니다.');
-  } catch {
-    log('error', '엑셀 생성에 실패했습니다. 수집 결과는 유지되므로 다시 다운로드해 주세요.');
+    log('info', '오직블라썸 표준 발주체크 엑셀 파일을 생성하고 있습니다...');
+    await downloadBaljuExcel(currentRows, { orderType: runOptions.type });
+    log('success', '발주체크 엑셀 파일 다운로드가 완료되었습니다.');
+  } catch (err) {
+    console.error(err);
+    log('error', '엑셀 생성에 실패했습니다: ' + err.message);
   } finally {
     downloadButton.disabled = false;
     startButton.disabled = false;
@@ -249,3 +232,4 @@ downloadButton.addEventListener('click', async () => {
 });
 
 log('info', '준비되었습니다. 기관 계정과 조회 조건을 입력한 뒤 수집을 시작해 주세요.');
+

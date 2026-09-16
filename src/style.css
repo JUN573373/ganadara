@@ -135,3 +135,52 @@ input::placeholder { color: var(--muted); opacity: .8; font-size: 11px; }
   .page-heading { flex-direction: column; }
   .terminal-actions { margin-left: 0; }
 }
+
+/* === 발주체크 결과 섹션 및 테이블 그리드 === */
+.result-section { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
+.result-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+.result-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.result-summary-text { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.result-actions { display: flex; align-items: center; gap: 10px; }
+.button.secondary { background: var(--field); color: var(--text); border: 1px solid var(--line); }
+.button.secondary:hover { background: var(--line); }
+.button.small { min-height: 32px; padding: 6px 12px; font-size: 11px; border-radius: 8px; }
+
+.badges-row { display: flex; gap: 6px; align-items: center; }
+.badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: var(--field); color: var(--muted); border: 1px solid var(--line); }
+.badge.warn { background: rgba(224, 112, 32, 0.12); color: #d96514; border-color: rgba(224, 112, 32, 0.3); }
+.badge.agg { background: rgba(56, 132, 244, 0.12); color: #2067d2; border-color: rgba(56, 132, 244, 0.3); cursor: pointer; }
+.badge.agg:hover { filter: brightness(0.92); }
+
+.table-scroll-container { max-height: 540px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; white-space: nowrap; }
+.preview-table th { position: sticky; top: 0; background: var(--field); z-index: 2; padding: 10px 12px; border-bottom: 2px solid var(--line); border-right: 1px solid var(--line); font-weight: 650; color: var(--text); }
+.preview-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: middle; }
+.preview-table tr:hover td { background: var(--surface); }
+.preview-table tr.needs-check td { background: rgba(224, 112, 32, 0.03); }
+
+.cell-input { width: 100%; min-height: 28px; padding: 4px 8px; font-size: 11px; border: 1px solid transparent; background: transparent; border-radius: 6px; color: var(--text); }
+.cell-input:hover, .cell-input:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+.cell-input.modified { font-weight: bold; color: #1e70bf; }
+
+.bouquet-clean { font-weight: 700; color: #2067d2; }
+.bouquet-raw { font-size: 10px; color: var(--muted); display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+/* === 모달 다이얼로그 === */
+.modal-dialog { border: none; border-radius: 20px; padding: 0; background: transparent; max-width: 540px; width: 92vw; }
+.modal-dialog::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(3px); }
+.modal-content { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); color: var(--text); }
+.modal-content.large { max-width: 720px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.modal-close { background: transparent; border: none; font-size: 20px; cursor: pointer; color: var(--muted); }
+.modal-close:hover { color: var(--text); }
+.modal-options { margin-bottom: 12px; }
+.sms-textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--text); padding: 14px; font-family: monospace, sans-serif; font-size: 12px; line-height: 1.6; resize: vertical; outline: none; }
+.sms-textarea:focus { border-color: var(--accent); }
+.modal-footer { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 16px; }
+.copy-status { font-size: 12px; color: #22a06b; font-weight: bold; }
+
+.agg-list { display: grid; gap: 10px; max-height: 380px; overflow-y: auto; }
+.agg-item { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); font-size: 12px; }
+.agg-item-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px; }

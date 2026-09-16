@@ -58,7 +58,7 @@
               <p class="section-description">원하는 발주 유형과 기간을 지정해 주세요.</p>
               <div class="options">
                 <label for="order-type">발주 유형<select id="order-type" name="order-type"><option value="WMON">본식 · 예식일 기준</option><option value="RMON">촬영 · 리허설일 기준</option></select></label>
-                <label for="date-preset">조회 기간<select id="date-preset"><option value="legacy">기본 기간 · 6일 전부터 내일까지</option><option value="today">오늘</option><option value="week">최근 7일 · 오늘 포함</option><option value="custom">직접 지정</option></select></label>
+                <label for="date-preset">조회 기간<select id="date-preset"><option value="weekly" selected>주간 발주체크 · 차주 수요일 ~ 차차주 화요일</option><option value="legacy">기본 기간 · 6일 전부터 내일까지</option><option value="today">오늘</option><option value="week">최근 7일 · 오늘 포함</option><option value="custom">직접 지정</option></select></label>
                 <div class="date-fields">
                   <label for="start-date">시작일<input id="start-date" name="start-date" type="date" required /></label>
                   <span class="date-separator" aria-hidden="true">—</span>
@@ -89,10 +89,84 @@
         <div class="terminal-footer"><span id="progress-text">설정을 마치고 발주 수집을 시작해 주세요.</span><span id="row-count">수집 0건</span></div>
       </section>
 
-      <section id="result-panel" class="result-panel" aria-labelledby="result-title" hidden>
-        <div><h2 id="result-title">수집 결과</h2><p id="result-summary"></p></div>
-        <button id="download-button" class="button primary" type="button">엑셀 다운로드 <span aria-hidden="true">↓</span></button>
+      <section id="result-panel" class="result-section" hidden>
+        <div class="result-header">
+          <div>
+            <div class="result-title-row">
+              <h2 id="result-title">발주체크 편집 & 미리보기</h2>
+              <div id="result-badges" class="badges-row"></div>
+            </div>
+            <p id="result-summary" class="result-summary-text"></p>
+          </div>
+          <div class="result-actions">
+            <button id="filter-needs-check" class="button secondary small" type="button">확인필요만 보기</button>
+            <button id="download-button" class="button primary" type="button">발주체크 엑셀 다운로드 <span aria-hidden="true">↓</span></button>
+          </div>
+        </div>
+
+        <div class="table-scroll-container">
+          <table id="preview-table" class="preview-table">
+            <thead>
+              <tr>
+                <th>NO</th>
+                <th>날짜</th>
+                <th>플래너</th>
+                <th>신부명</th>
+                <th>배송지</th>
+                <th>배송시간</th>
+                <th>발주부케</th>
+                <th>부토니에</th>
+                <th>특이사항</th>
+                <th>장소</th>
+                <th>시간</th>
+                <th>내 코멘트</th>
+                <th>이상원 코멘트</th>
+                <th>배송문자</th>
+              </tr>
+            </thead>
+            <tbody id="preview-tbody"></tbody>
+          </table>
+        </div>
       </section>
+
+      <!-- 배송안내 문자 모달 -->
+      <dialog id="sms-modal" class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="sms-modal-title">배송안내 문자</h3>
+            <button id="sms-modal-close" class="modal-close" type="button" aria-label="닫기">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-options">
+              <label class="check-option">
+                <input id="sms-include-sangwon" type="checkbox" />
+                <span>이상원 코멘트 포함하기</span>
+              </label>
+            </div>
+            <textarea id="sms-text" class="sms-textarea" rows="12"></textarea>
+          </div>
+          <div class="modal-footer">
+            <span id="sms-copy-status" class="copy-status" hidden>복사되었습니다! ✓</span>
+            <button id="sms-copy-btn" class="button primary" type="button">1클릭 복사</button>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- 합산 주문 상세 모달 -->
+      <dialog id="agg-modal" class="modal-dialog">
+        <div class="modal-content large">
+          <div class="modal-header">
+            <h3 id="agg-modal-title">동일 고객 합산 내역</h3>
+            <button id="agg-modal-close" class="modal-close" type="button" aria-label="닫기">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div id="agg-modal-list" class="agg-list"></div>
+          </div>
+          <div class="modal-footer">
+            <button id="agg-modal-confirm" class="button secondary" type="button">닫기</button>
+          </div>
+        </div>
+      </dialog>
       <footer class="page-footer"><span>발주체크</span><span>기관 선택부터 엑셀 저장까지.</span></footer>
     </main>
     <script type="module" src="/src/main.js"></script>

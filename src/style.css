@@ -136,7 +136,21 @@ input::placeholder { color: var(--muted); opacity: .8; font-size: 11px; }
   .terminal-actions { margin-left: 0; }
 }
 
-/* === 발주체크 결과 섹션 및 테이블 그리드 === */
+/* === 03 세부 변환 설정 패널 === */
+.rules-panel { margin-top: 20px; }
+.rules-header { display: flex; justify-content: space-between; align-items: center; }
+.rules-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 24px; }
+.options-group { display: grid; gap: 10px; background: var(--field); padding: 14px; border-radius: 12px; border: 1px solid var(--line); }
+
+.rules-table-container { max-height: 250px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.rules-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.rules-table th { background: var(--surface); padding: 7px 10px; border-bottom: 1px solid var(--line); font-weight: 600; text-align: left; }
+.rules-table td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.rules-input { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); padding: 5px 8px; font-size: 11px; }
+.rules-del-btn { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+.rules-del-btn:hover { color: var(--error); background: rgba(230, 60, 60, 0.1); }
+
+/* === 발주체크 결과 섹션 및 테이블 그리드 (깨짐 방지 전면 개선) === */
 .result-section { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
 .result-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
 .result-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -147,24 +161,28 @@ input::placeholder { color: var(--muted); opacity: .8; font-size: 11px; }
 .button.small { min-height: 32px; padding: 6px 12px; font-size: 11px; border-radius: 8px; }
 
 .badges-row { display: flex; gap: 6px; align-items: center; }
-.badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: var(--field); color: var(--muted); border: 1px solid var(--line); }
-.badge.warn { background: rgba(224, 112, 32, 0.12); color: #d96514; border-color: rgba(224, 112, 32, 0.3); }
+.badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: var(--field); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; flex-shrink: 0; }
+.badge.warn { background: rgba(224, 112, 32, 0.15); color: #d96514; border-color: rgba(224, 112, 32, 0.4); }
 .badge.agg { background: rgba(56, 132, 244, 0.12); color: #2067d2; border-color: rgba(56, 132, 244, 0.3); cursor: pointer; }
 .badge.agg:hover { filter: brightness(0.92); }
 
-.table-scroll-container { max-height: 540px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
-.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; white-space: nowrap; }
-.preview-table th { position: sticky; top: 0; background: var(--field); z-index: 2; padding: 10px 12px; border-bottom: 2px solid var(--line); border-right: 1px solid var(--line); font-weight: 650; color: var(--text); }
-.preview-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: middle; }
-.preview-table tr:hover td { background: var(--surface); }
-.preview-table tr.needs-check td { background: rgba(224, 112, 32, 0.03); }
+/* 테이블 스크롤 및 셀 레이아웃 */
+.table-scroll-container { max-height: 560px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.preview-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; white-space: nowrap; }
+.preview-table th { position: sticky; top: 0; background: var(--field); z-index: 2; padding: 11px 12px; border-bottom: 2px solid var(--line); border-right: 1px solid var(--line); font-weight: 700; color: var(--text); font-size: 12px; }
+.preview-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: middle; }
+.preview-table tr:hover td { background: rgba(0,0,0,0.015); }
+.preview-table tr.needs-check td { background: rgba(224, 112, 32, 0.04); }
 
-.cell-input { width: 100%; min-height: 28px; padding: 4px 8px; font-size: 11px; border: 1px solid transparent; background: transparent; border-radius: 6px; color: var(--text); }
-.cell-input:hover, .cell-input:focus { border-color: var(--accent); background: var(--surface); outline: none; }
-.cell-input.modified { font-weight: bold; color: #1e70bf; }
+/* 컬럼별 레이아웃 및 입력필드 */
+.cell-shipping-box { display: flex; align-items: center; gap: 6px; min-width: 180px; }
+.cell-input { width: 100%; min-height: 30px; padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--text); box-sizing: border-box; }
+.cell-input:hover, .cell-input:focus { border-color: #5e99c3; background: var(--surface); outline: none; }
+.cell-input.modified { border-color: #2067d2; font-weight: 600; }
 
-.bouquet-clean { font-weight: 700; color: #2067d2; }
-.bouquet-raw { font-size: 10px; color: var(--muted); display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.bouquet-cell-box { display: flex; flex-direction: column; gap: 3px; min-width: 190px; }
+.bouquet-clean { font-weight: 700; color: #1e70bf; font-size: 12px; }
+.bouquet-raw { font-size: 10px; color: var(--muted); display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* === 모달 다이얼로그 === */
 .modal-dialog { border: none; border-radius: 20px; padding: 0; background: transparent; max-width: 540px; width: 92vw; }

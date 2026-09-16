@@ -1,29 +1,87 @@
 /**
  * 발주 데이터 정제 및 변환 모듈 (formatter.js)
  */
+import { DEFAULT_CONFIG } from './config.js';
 
 /**
  * 부케 상품명에서 등급/코드 추출
- * 예: "[본식9/1-] VS플러스 -5" -> "VS+"
- *     "[본식 9/1-] BL-15" -> "BL-15"
- *     "Vs+512 화이트장미그린" -> "VS+512"
- *     "S-303화이트장미보리사초" -> "S-303"
+ * 사용자 정의 변환 규칙(customRules)을 우선 적용합니다.
  */
-export function cleanBouquetName(rawName) {
+export function cleanBouquetName(rawName, customRules = null) {
   if (!rawName) return '';
   let str = String(rawName).replace('수임료차감포함', '').trim();
+  const strCompact = str.replace(/\s+/g, '');
 
-  // 금액만 있는 경우 (예: "10만원 - 100,000원", "[본식추가] 10만원")
-  const priceMatch = str.match(/(\d+만원)/);
+  const rules = Array.isArray(customRules) && customRules.length > 0
+    ? customRules
+    : DEFAULT_CONFIG.bouquetRules;
 
-  // 1. BL 계열 (BL-15, BL-1228, BL-1246 등)
+  // 1. 사용자 커스텀 규칙 매칭
+  for (const rule of rules) {
+    if (!rule.pattern) continue;
+    const pat = rule.pattern.trim();
+    const patCompact = pat.replace(/\s+/g, '');
+
+    // 공백 및 대소문자 무시 매칭
+    const matched = strCompact.toLowerCase().includes(patCompact.toLowerCase()) ||
+                    str.toLowerCase().includes(pat.toLowerCase());
+
+    if (matched) {
+      if (rule.replacement === '$CODE') {
+        // 코드 패턴 자동 유지 ($CODE)
+        if (pat.toUpperCase().startsWith('BL')) {
+          const m = str.match(/(BL-?\d+)/i);
+          if (m) {
+            const c = m[1].toUpperCase();
+            return c.startsWith('BL-') ? c : c.replace('BL', 'BL-');
+          }
+        }
+        if (pat.toUpperCase().startsWith('S-')) {
+          const m = str.match(/(S-\d+)/i);
+          if (m) return m[1].toUpperCase();
+        }
+        if (pat.toUpperCase().startsWith('VVS')) {
+          const m = str.match(/(VVS(?:-\d+)?)/i);
+          if (m) return m[1].toUpperCase();
+        }
+      } else {
+        // VVS 뒤에 번호가 있으면 유지 (예: VVS-6)
+        if (rule.replacement === 'VVS') {
+          const vvsMatch = str.match(/VVS(?:-|\s*)(\d+)/i);
+          if (vvsMatch && vvsMatch[1]) {
+            return `VVS-${vvsMatch[1]}`;
+          }
+        }
+        // 숫자 코드가 붙어있는지 확인 (예: VS+512)
+        if (rule.replacement === 'VS+') {
+          const numMatch = str.match(/VS(?:\+|플러스)\s*(\d+)/i);
+          if (numMatch && numMatch[1]) {
+            return `VS+${numMatch[1]}`;
+          }
+        }
+        // 촬영 부케류에서 S 등급 또는 금액 우선 (예: 'S', 8만원, 80,000원 -> 8만원)
+        if (rule.replacement === '촬영 부케') {
+          if (/\bS\b/i.test(str)) return 'S';
+          const wonM = str.match(/(\d+)0,000원/);
+          if (wonM) return `${wonM[1]}만원`;
+          const priceM = str.match(/(\d+만원)/);
+          if (priceM) return priceM[1];
+        }
+        return rule.replacement;
+      }
+    }
+  }
+
+  // 2. 기본 내장 추출 규칙 (규칙에 걸리지 않은 경우)
+
+  // BL-코드 (BL-15, BL-1228 등)
   const blMatch = str.match(/\b(BL-?\d+)\b/i);
   if (blMatch) {
     const code = blMatch[1].toUpperCase();
     return code.startsWith('BL-') ? code : code.replace('BL', 'BL-');
   }
 
-  // 2. VS+ / VS플러스 계열 (VS+512, VS+573, VS+ 등)
+  // VS+ / VS플러스
   if (/VS\s*플러스/i.test(str) || /VS\+/i.test(str)) {
     const numMatch = str.match(/VS(?:\+|플러스)\s*(\d+)/i);
     if (numMatch && numMatch[1]) {
@@ -32,37 +90,52 @@ export function cleanBouquetName(rawName) {
     return 'VS+';
   }
 
-  // 3. VVS 계열 (VVS-6, VVS 15만원 등)
+  // VVS 계열
   const vvsMatch = str.match(/\b(VVS(?:-\d+)?)\b/i);
   if (vvsMatch) {
     return vvsMatch[1].toUpperCase();
   }
 
-  // 4. VS 단독 계열
+  // VS 계열
   const vsMatch = str.match(/\b(VS(?:-\d+)?)\b/i);
   if (vsMatch && !/VS(?:\+|플러스)/i.test(str)) {
     return vsMatch[1].toUpperCase();
   }
 
-  // 5. S-코드 계열 (S-303, S-313, S-302 등)
+  // S-코드 (S-303, S-313 등)
   const sCodeMatch = str.match(/\b(S-\d+)\b/i);
   if (sCodeMatch) {
     return sCodeMatch[1].toUpperCase();
   }
 
-  // 6. S 단독 등급 (예: "[서비스 본식부케] S", "[촬영부케] S 10만원")
+  // 촬영 부케류
+  if (str.includes('촬영부케') || str.includes('촬영 부케')) {
+    if (/\bS\b/i.test(str)) return 'S';
+    const priceM = str.match(/(\d+만원)/);
+    if (priceM) return priceM[1];
+    return '촬영 부케';
+  }
+
+  // S 단독 등급 (예: "[서비스 본식부케] S")
   if (/\bS\b/i.test(str) || /\]\s*S\b/i.test(str)) {
     return 'S';
   }
 
-  // 7. 만약 특별한 등급 없이 금액이 있는 경우 (예: "10만원", "8만원")
+  // 추가금/금액 표기 (예: "[본식추가] 10만원", "80,000원")
+  const wonMatch = str.match(/(\d+)0,000원/);
+  if (wonMatch) {
+    const manwon = `${wonMatch[1]}만원`;
+    return str.includes('추가') ? `[추가] ${manwon}` : manwon;
+  }
+  const priceMatch = str.match(/(\d+만원)/);
   if (priceMatch) {
     if (str.includes('추가')) return `[추가] ${priceMatch[1]}`;
     return priceMatch[1];
   }
 
-  // 8. 괄호 제거 후 앞부분 정리
-  const clean = str.replace(/^\[[^\]]+\]\s*/, '').split('-')[0].trim();
+  // 앞의 괄호 태그 제거 및 금액/하이픈 안전 제거
+  let clean = str.replace(/^\[[^\]]+\]\s*/, '').trim();
+  clean = clean.replace(/\s*-\s*[\d,]+원?/g, '').trim();
   return clean || str;
 }
 
@@ -93,7 +166,6 @@ export function formatNotes(notes, venueTime = '') {
   if (outTime) {
     if (!text.startsWith(outTime)) {
       let stripped = text.replace(new RegExp(outTime, 'g'), '').trim();
-      // 앞뒤에 남은 슬래시, 대시, 쉼표, 공백 제거
       stripped = stripped.replace(/^[\s/,-]+|[\s/,-]+$/g, '').trim();
       return stripped ? `${outTime} / ${stripped}` : outTime;
     }
@@ -109,15 +181,29 @@ export function formatNotes(notes, venueTime = '') {
 export function cleanBrideName(name) {
   if (!name) return '';
   const parts = name.trim().split(/\s+/);
-  // 통상 신부명이 첫 번째에 위치
   return parts[0] || name;
 }
 
 /**
- * 주문 합산 함수
- * 기준: 기관(site) + 예식일(날짜) + 플래너 + 신부명
+ * 배송지 정제: "(확인필요)" 문구를 텍스트에서 분리하여 반환
  */
-export function aggregateOrders(rawList, siteKey = 'ini') {
+export function cleanShippingPlace(rawPlace) {
+  if (!rawPlace) return { place: '', needsCheck: false };
+  const str = String(rawPlace).trim();
+  const needsCheck = str.includes('확인필요');
+  const cleanPlace = str.replace(/\(확인필요\)/g, '').replace(/확인필요/g, '').trim();
+  return { place: cleanPlace, needsCheck };
+}
+
+/**
+ * 주문 합산 함수
+ * config 설정에 따라 On/Off 및 규칙이 적용됩니다.
+ */
+export function aggregateOrders(rawList, siteKey = 'ini', config = null) {
+  const cfg = config || DEFAULT_CONFIG;
+  const enableAgg = cfg.enableAggregation !== false;
+  const enableOut = cfg.enableOutTime !== false;
+
   const groups = new Map();
 
   for (const item of rawList) {
@@ -125,7 +211,14 @@ export function aggregateOrders(rawList, siteKey = 'ini') {
     const bride = cleanBrideName(item['신부명']);
     const date = (item['날짜'] || item['예식일'] || '').trim();
 
-    const key = `${siteKey}_${date}_${planner}_${bride}`;
+    // 합산 미사용 시 행마다 고유 키 부여
+    const key = enableAgg
+      ? `${siteKey}_${date}_${planner}_${bride}`
+      : `${siteKey}_${date}_${planner}_${bride}_${item['발주코드'] || Math.random()}`;
+
+    // 배송지 확인필요 분리
+    const rawShipping = item['배송지'] || '';
+    const { place: cleanPlace, needsCheck } = cleanShippingPlace(rawShipping);
 
     if (!groups.has(key)) {
       groups.set(key, {
@@ -134,6 +227,9 @@ export function aggregateOrders(rawList, siteKey = 'ini') {
         _key: key,
         _isAggregated: false,
         _originalOrders: [item],
+        // 배송지에서 '(확인필요)' 텍스트는 제외하고 순수 명칭만 저장
+        배송지: cleanPlace,
+        _needsCheck: needsCheck,
         // 사용자 코멘트 기본값
         myComment: item.myComment || '',
         sangwonComment: item.sangwonComment || '',
@@ -142,6 +238,7 @@ export function aggregateOrders(rawList, siteKey = 'ini') {
       const existing = groups.get(key);
       existing._isAggregated = true;
       existing._originalOrders.push(item);
+      if (needsCheck) existing._needsCheck = true;
 
       // 발주부케 병합
       const currentBouquet = existing['발주부케'] || '';
@@ -158,20 +255,22 @@ export function aggregateOrders(rawList, siteKey = 'ini') {
         existing['특이사항(기타사항)'] = existing['특이사항'];
       }
 
-      // 빈 필드 채우기 (배송지, 예식장소 등)
-      if (!existing['배송지'] && item['배송지']) existing['배송지'] = item['배송지'];
+      // 빈 필드 채우기
+      if (!existing['배송지'] && cleanPlace) existing['배송지'] = cleanPlace;
       if (!existing['예식장소'] && item['예식장소']) existing['예식장소'] = item['예식장소'];
       if (!existing['예식시간'] && item['예식시간']) existing['예식시간'] = item['예식시간'];
     }
   }
 
-  return Array.from(groups.values()).map((row, idx) => {
-    // 부케명 단정하게 정제된 표시용 필드
-    row._cleanedBouquet = cleanBouquetName(row['발주부케']);
-    // 특이사항 정제 (아웃시간 앞단 배치)
+  return Array.from(groups.values()).map((row) => {
+    // 부케명 사용자 정의 변환 규칙 적용
+    row._cleanedBouquet = cleanBouquetName(row['발주부케'], cfg.bouquetRules);
+
+    // 특이사항 정제
     const rawNote = row['특이사항(기타사항)'] || row['특이사항'] || '';
-    row['특이사항'] = formatNotes(rawNote, row['예식시간']);
+    row['특이사항'] = enableOut ? formatNotes(rawNote, row['예식시간']) : rawNote;
     row['특이사항(기타사항)'] = row['특이사항'];
+
     return row;
   });
 }
@@ -184,13 +283,10 @@ export function getWeeklyPresetDates(baseDate = new Date()) {
   const current = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
   const currentDay = current.getDay(); // 0: 일, 1: 월, 2: 화, 3: 수, 4: 목, 5: 금, 6: 토
 
-  // 다음 주 수요일까지 필요한 일수 계산
-  // 이번 주 수요일(3)로부터 7일 뒤가 다음 주 수요일
   const daysUntilNextWed = (3 - currentDay + 7) % 7 + 7;
   const nextWed = new Date(current);
   nextWed.setDate(current.getDate() + (daysUntilNextWed === 7 ? 7 : daysUntilNextWed));
 
-  // 그 다음 주 화요일은 다음 주 수요일로부터 6일 뒤
   const afterNextTue = new Date(nextWed);
   afterNextTue.setDate(nextWed.getDate() + 6);
 
@@ -210,36 +306,30 @@ export function getWeeklyPresetDates(baseDate = new Date()) {
 
 /**
  * 배송안내 문자 생성 함수
- * 「OZIC BLOSSOM 배송안내」 표준 서식
+ * 템플릿(customTemplate) 기반 치환
  */
 export function generateDeliveryMessage(row, options = {}) {
-  const { includeSangwonComment = false } = options;
+  const { includeSangwonComment = false, template = null } = options;
 
-  // 날짜/요일 파싱 (예: "09/12(토)" 또는 "2026-09-12")
   let dateText = row['날짜'] || row['예식일'] || '';
-  let month = '';
-  let day = '';
-  let dayOfWeek = '';
+  let formattedDate = dateText;
 
   const dateMatch = dateText.match(/(\d{1,2})\/(\d{1,2})\s*\(([가-힣])\)/);
   if (dateMatch) {
-    month = parseInt(dateMatch[1], 10);
-    day = parseInt(dateMatch[2], 10);
-    dayOfWeek = dateMatch[3];
+    formattedDate = `${parseInt(dateMatch[1], 10)}월 ${parseInt(dateMatch[2], 10)}일 (${dateMatch[3]})`;
   } else {
     const isoMatch = dateText.match(/(\d{4})-(\d{2})-(\d{2})/);
     if (isoMatch) {
       const d = new Date(dateText);
-      month = parseInt(isoMatch[2], 10);
-      day = parseInt(isoMatch[3], 10);
-      dayOfWeek = '일월화수목금토'[d.getDay()] || '';
+      const dayOfWeek = '일월화수목금토'[d.getDay()] || '';
+      formattedDate = `${parseInt(isoMatch[2], 10)}월 ${parseInt(isoMatch[3], 10)}일 (${dayOfWeek})`;
     }
   }
 
   const bride = cleanBrideName(row['신부명']) || '신부';
   const bouquet = row._cleanedBouquet || cleanBouquetName(row['발주부케']) || row['발주부케'] || '발주부케';
   const shippingTime = (row['배송시간'] || '').trim();
-  const shippingPlace = (row['배송지'] || '').replace(/\(확인필요\)/g, '').trim();
+  const shippingPlace = (row['배송지'] || '').trim();
 
   const deliverySchedule = shippingTime ? `${shippingTime} ${shippingPlace}` : `${shippingPlace}`;
 
@@ -248,16 +338,13 @@ export function generateDeliveryMessage(row, options = {}) {
     sangwonNote = `\n※ 안내: ${row.sangwonComment}\n`;
   }
 
-  return `【OZIC BLOSSOM 배송안내】
-${month ? `${month}월 ${day}일 (${dayOfWeek})` : dateText} ${bride}신부님
-${bouquet}
-${deliverySchedule} 배송예정입니다.${sangwonNote}
+  const rawTemplate = template || DEFAULT_CONFIG.smsTemplate;
 
-▶위의 내용 꼭 확인해주시고, 변경사항 있으시면 수요일이전에 알려주세요!
-▶예식주 안나오는 잔소재는 대체될 수 있는 점 참고 부탁드리며,
-▶부케명이 잘못 표기되어 있는 경우 당일 변경어렵거나 추가금이 발생될 수 있으며,
-▶배송지 잘못 기재되어 예식당일 급하게 변경시 1만원의 배송추가금이 발생될 수 있습니다.
-▶배송안내문자는 월~화요일 사이에 발송됩니다. 화요일까지 문자 못 받으신 경우 누락될 수 있으니 꼭 확인연락주시고, 화요일 이후 늦게 발주 보내주신 건은 따로 문자발송하지 않으니 양해부탁드립니다.
-▶메이크업샵에서 부케확인하실 때 박스 안에 부토니에, 코사지 6개 사이드에 붙어있는지 꼭 확인바랍니다.
-메이크업샵에서 아웃하고 난 후 연락주시면 대처가 어려우니 꼭 확인바랍니다.`.trim();
+  return rawTemplate
+    .replace(/\{예식일자\}|\{예식월\}월\s*\{예식일\}일\s*\(\{요일\}\)/g, formattedDate)
+    .replace(/\{신부명\}/g, bride)
+    .replace(/\{발주부케\}/g, bouquet)
+    .replace(/\{배송일정\}|\{배송시간\}\{배송지\}/g, deliverySchedule)
+    .replace(/\{이상원코멘트\}/g, sangwonNote)
+    .trim();
 }

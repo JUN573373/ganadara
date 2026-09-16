@@ -73,6 +73,65 @@
               </div>
             </section>
           </div>
+
+          <!-- 03 세부 변환 설정 (합산 기준, 부케 표기, 배송문자) -->
+          <section class="panel rules-panel" aria-labelledby="rules-title" style="margin-top: 20px;">
+            <div class="rules-header">
+              <div class="section-heading">
+                <span class="step">03</span>
+                <h2 id="rules-title">세부 변환 설정 <small style="font-size: 11px; font-weight: normal; color: var(--muted);">(합산 기준 · 부케 표기 · 배송문자)</small></h2>
+              </div>
+              <button id="toggle-rules-btn" class="button secondary small" type="button">설정 펼치기 ⚙</button>
+            </div>
+
+            <div id="rules-body" class="rules-body" hidden style="margin-top: 20px; border-top: 1px solid var(--line); padding-top: 20px;">
+              <div class="rules-grid">
+                <div>
+                  <h3 style="font-size: 13px; margin-bottom: 12px;">합산 및 정제 옵션</h3>
+                  <div class="options-group">
+                    <label class="check-option">
+                      <input id="cfg-enable-agg" type="checkbox" checked />
+                      <span>동일 고객 주문 자동 합산<small>기관+예식일+플래너+신부명 기준 1행으로 병합</small></span>
+                    </label>
+                    <label class="check-option">
+                      <input id="cfg-enable-out" type="checkbox" checked />
+                      <span>특이사항에서 '아웃 시간' 맨 앞에 자동 배치<small>예: '11시 30분 아웃 / 싱싱하게...'</small></span>
+                    </label>
+                  </div>
+
+                  <h3 style="font-size: 13px; margin-top: 20px; margin-bottom: 8px;">배송안내 문자 공통 템플릿</h3>
+                  <p style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">치환 변수: {예식일자}, {신부명}, {발주부케}, {배송일정}, {이상원코멘트}</p>
+                  <textarea id="cfg-sms-template" class="sms-textarea" rows="7" style="font-size: 11px;"></textarea>
+                  <div style="margin-top: 6px; text-align: right;">
+                    <button id="cfg-reset-sms-btn" class="button secondary small" type="button" style="font-size: 10px;">문자 양식 기본값 복원</button>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="font-size: 13px; margin: 0;">부케 표기 변환 규칙 표</h3>
+                    <button id="cfg-add-rule-btn" class="button secondary small" type="button" style="font-size: 10px;">+ 규칙 추가</button>
+                  </div>
+                  <p style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">위에서부터 순서대로 매칭됩니다. (특정 코드를 유지하려면 $CODE 입력)</p>
+                  
+                  <div class="rules-table-container">
+                    <table class="rules-table">
+                      <thead>
+                        <tr>
+                          <th>원문 포함 단어</th>
+                          <th style="width: 24px; text-align: center;">➔</th>
+                          <th>최종 바꿀 표기</th>
+                          <th style="width: 40px; text-align: center;">삭제</th>
+                        </tr>
+                      </thead>
+                      <tbody id="cfg-rules-tbody"></tbody>
+                    </table>
+                  </div>
+                  <p class="field-note" style="margin-top: 10px;">설정은 브라우저에 자동 저장되며 수집 시작 시 바로 적용됩니다.</p>
+                </div>
+              </div>
+            </div>
+          </section>
         </fieldset>
       </form>
 

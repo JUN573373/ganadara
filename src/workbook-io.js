@@ -5,7 +5,7 @@ export function attachWorkspaceMetadata(wb, rows, options) {
   const meta = wb.addWorksheet('_발주정보', { state: 'veryHidden' });
   meta.addRow(['발주작업', 1]);
   meta.addRow(['__설정', 0, JSON.stringify({ options: options.workspaceOptions || { type: options.orderType || 'WMON' }, config: options.config })]);
-  for (const row of rows) {
+  for (const row of [...rows, ...(options.originalData ? [{ _rowId: '__원본', data: options.originalData }] : [])]) {
     const json = JSON.stringify(row);
     for (let offset = 0; offset < json.length; offset += 30000) {
       meta.addRow([row._rowId, offset / 30000, json.slice(offset, offset + 30000)]);
@@ -124,5 +124,6 @@ export async function importWorkbook(buffer) {
   if (!rows.length) throw new Error('신부명·발주부케 열이 있는 발주체크 엑셀을 선택해 주세요.');
   return { format: 'ozic-workspace', version: 1, rows,
     options: { ...settings.options, type: orderType }, config: settings.config,
+    originalData: snapshots.get('__원본')?.data,
     importNotice: unmapped ? `${unmapped}행은 원본 식별 정보가 없어 향후 기관 확인 처리와 연결할 수 없습니다. 편집·문자 생성은 가능합니다.` : '' };
 }

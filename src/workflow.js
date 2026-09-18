@@ -90,7 +90,7 @@ export function initWorkflow() {
     download.disabled = true;
     try {
       const { downloadBaljuExcel } = await import('./excel-export.js');
-      await downloadBaljuExcel(workspace.rows, { orderType: workspace.options.type || 'WMON', workspaceOptions: workspace.options, config: workspace.config });
+      await downloadBaljuExcel(workspace.rows, { orderType: workspace.options.type || 'WMON', workspaceOptions: workspace.options, originalData: workspace.originalData, config: workspace.config });
       status.textContent = '엑셀을 저장했습니다. 상대방이 추가사항을 적은 뒤 돌려준 파일을 다시 열 수 있습니다.';
     } catch (error) { status.dataset.error = 'true'; status.textContent = '엑셀 생성 실패: ' + error.message; }
     finally { download.disabled = false; }

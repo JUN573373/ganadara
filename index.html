@@ -102,7 +102,7 @@
           <div class="workspace-actions">
             <button id="open-workspace" type="button" class="button secondary">엑셀 / JSON 열기</button>
             <input id="workspace-file" aria-label="엑셀 또는 JSON 파일 선택" type="file" accept=".xlsx,.json" class="sr-only" />
-            <button id="backup-workspace" type="button" class="button secondary">작업 JSON 저장</button>
+            <button id="backup-workspace" type="button" class="button secondary">원본 + 수정본 JSON 저장</button>
             <button id="clear-workspace" type="button" class="button secondary">저장된 작업 지우기</button>
           </div>
           <p class="field-note">현재 작업은 이 브라우저에 자동 저장됩니다.<br>다른 기기에서 이어가려면 JSON 파일을 저장해 주세요. 계정 정보는 저장하지 않습니다.</p>
@@ -178,12 +178,21 @@
             <p id="result-summary" class="result-summary-text"></p>
           </div>
           <div class="result-actions">
+            <button id="view-original" class="button secondary small" type="button">수집 원본 보기</button>
+            <button id="sheet-expand" class="button secondary small" type="button" aria-pressed="false">화면 전체 보기</button>
             <button id="filter-needs-check" class="button secondary small" type="button">확인필요만 보기</button>
             <button id="download-button" class="button primary" type="button">발주체크 엑셀 다운로드 <span aria-hidden="true">↓</span></button>
           </div>
         </div>
 
-        <div class="table-scroll-container">
+        <div class="sheet-toolbar">
+          <span id="sheet-position" role="status">편집할 셀을 선택하세요</span>
+          <span class="sheet-help"><strong>테두리 입력칸은 편집 가능 · 일반 텍스트는 읽기 전용</strong><br>Tab 옆 셀 · Enter 다음 행 · Shift+Enter 이전 행 · Alt+Enter 줄바꿈 · 열 경계 드래그</span>
+          <label for="sheet-zoom">화면 배율
+            <select id="sheet-zoom"><option value="90">90%</option><option value="100" selected>100%</option><option value="115">115%</option><option value="130">130%</option></select>
+          </label>
+        </div>
+        <div class="table-scroll-container" tabindex="0" aria-label="발주 엑셀 편집 영역">
           <table id="preview-table" class="preview-table">
             <thead>
               <tr>
@@ -191,14 +200,14 @@
                 <th>날짜</th>
                 <th>플래너</th>
                 <th>신부명</th>
-                <th>배송지</th>
-                <th>배송시간</th>
-                <th>발주부케</th>
+                <th class="editable-heading">배송지 <span class="edit-label">편집</span></th>
+                <th class="editable-heading">배송시간 <span class="edit-label">편집</span></th>
+                <th class="editable-heading">발주부케 <span class="edit-label">편집</span></th>
                 <th>부토니에</th>
-                <th>특이사항</th>
+                <th class="editable-heading">특이사항 <span class="edit-label">편집</span></th>
                 <th>장소</th>
                 <th>시간</th>
-                <th>추가사항</th>
+                <th class="editable-heading">추가사항 <span class="edit-label">편집</span></th>
                 <th>배송문자</th>
               </tr>
             </thead>
@@ -232,21 +241,6 @@
         </div>
       </dialog>
 
-      <!-- 합산 주문 상세 모달 -->
-      <dialog id="agg-modal" class="modal-dialog">
-        <div class="modal-content large">
-          <div class="modal-header">
-            <h3 id="agg-modal-title">동일 고객 합산 내역</h3>
-            <button id="agg-modal-close" class="modal-close" type="button" aria-label="닫기">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div id="agg-modal-list" class="agg-list"></div>
-          </div>
-          <div class="modal-footer">
-            <button id="agg-modal-confirm" class="button secondary" type="button">닫기</button>
-          </div>
-        </div>
-      </dialog>
       <footer class="page-footer"><span>발주체크</span><span>기관 선택부터 엑셀 저장까지.</span></footer>
     </main>
     <script type="module" src="/src/main.js"></script>

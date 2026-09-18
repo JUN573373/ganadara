@@ -8,6 +8,7 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
 })[char]);
 let currentOptions = {};
 let rawScrapedResults = [];
+let originalData = [];
 let filterNeedsCheckOnly = false;
 let activeSmsRow = null;
 let currentConfig = loadConfig();
@@ -27,12 +28,6 @@ const smsText = document.querySelector('#sms-text');
 const smsCopyBtn = document.querySelector('#sms-copy-btn');
 const smsCopyStatus = document.querySelector('#sms-copy-status');
 
-const aggModal = document.querySelector('#agg-modal');
-const aggModalClose = document.querySelector('#agg-modal-close');
-const aggModalConfirm = document.querySelector('#agg-modal-confirm');
-const aggModalTitle = document.querySelector('#agg-modal-title');
-const aggModalList = document.querySelector('#agg-modal-list');
-
 // 세부 설정 패널 요소
 const toggleRulesBtn = document.querySelector('#toggle-rules-btn');
 const rulesBody = document.querySelector('#rules-body');
@@ -48,6 +43,89 @@ const cfgRulesTbody = document.querySelector('#cfg-rules-tbody');
  */
 export function initEditor() {
   initRulesPanel();
+  document.querySelector('#view-original').addEventListener('click', () => openOriginalWindow());
+  const table = document.querySelector('#preview-table');
+  const expand = document.querySelector('#sheet-expand');
+  const widths = [54, 120, 150, 130, 210, 140, 280, 140, 300, 200, 130, 300, 140];
+  const columns = document.createElement('colgroup');
+  widths.forEach(width => {
+    const col = document.createElement('col');
+    col.style.width = width + 'px';
+    columns.append(col);
+  });
+  table.prepend(columns);
+  const resizeColumns = () => {
+    table.style.width = widths.reduce((sum, width) => sum + width, 0) + 'px';
+    table.style.setProperty('--number-width', widths[0] + 'px');
+  };
+  resizeColumns();
+  table.querySelectorAll('thead th').forEach((header, index) => {
+    const handle = document.createElement('span');
+    handle.className = 'column-resizer';
+    handle.title = '드래그하여 열 너비 조절';
+    header.append(handle);
+    handle.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      const start = event.clientX;
+      const width = widths[index];
+      const move = e => {
+        widths[index] = Math.max(70, width + e.clientX - start);
+        columns.children[index].style.width = widths[index] + 'px';
+        resizeColumns();
+      };
+      const stop = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', stop);
+        handle.removeEventListener('pointercancel', stop);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', stop);
+      handle.addEventListener('pointercancel', stop);
+    });
+  });
+  expand.addEventListener('click', () => {
+    const expanded = resultPanel.classList.toggle('sheet-expanded');
+    document.body.classList.toggle('sheet-open', expanded);
+    expand.textContent = expanded ? '전체 보기 닫기 (Esc)' : '화면 전체 보기';
+    expand.setAttribute('aria-pressed', String(expanded));
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && resultPanel.classList.contains('sheet-expanded') && !document.querySelector('dialog[open]')) expand.click();
+  });
+  window.addEventListener('hashchange', () => {
+    if (location.hash !== '#review' && resultPanel.classList.contains('sheet-expanded')) expand.click();
+  });
+  document.querySelector('#sheet-zoom').addEventListener('change', event => {
+    table.style.setProperty('--sheet-font', 14 * Number(event.target.value) / 100 + 'px');
+  });
+  previewTbody.addEventListener('focusin', event => {
+    const cell = event.target.closest('td');
+    if (!cell) return;
+    document.querySelector('#sheet-position').textContent =
+      String.fromCharCode(65 + cell.cellIndex) + cell.parentElement.rowIndex + ' · ' +
+      table.tHead.rows[0].cells[cell.cellIndex].textContent.trim();
+    cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+  previewTbody.addEventListener('keydown', event => {
+    if (event.isComposing || !event.target.matches('.cell-input')) return;
+    if (!['Enter', 'Tab'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
+    const input = event.target;
+    const cells = [...previewTbody.querySelectorAll('.cell-input')];
+    let next;
+    if (event.key === 'Tab') next = cells[cells.indexOf(input) + (event.shiftKey ? -1 : 1)];
+    else {
+      const row = input.closest('tr');
+      const nextRow = event.shiftKey ? row.previousElementSibling : row.nextElementSibling;
+      next = nextRow?.cells[input.closest('td').cellIndex]?.querySelector('.cell-input');
+    }
+    if (next) {
+      event.preventDefault();
+      next.focus();
+      next.select();
+    } else if (event.key === 'Enter') event.preventDefault();
+  });
+
 
   if (filterNeedsCheckBtn) {
     filterNeedsCheckBtn.addEventListener('click', () => {
@@ -95,13 +173,7 @@ export function initEditor() {
     document.dispatchEvent(new Event('workspace-change'));
   });
 
-  // 합산 모달 이벤트
-  if (aggModalClose) {
-    aggModalClose.addEventListener('click', () => aggModal.close());
-  }
-  if (aggModalConfirm) {
-    aggModalConfirm.addEventListener('click', () => aggModal.close());
-  }
+
 }
 
 /**
@@ -229,7 +301,13 @@ export function setScrapedData(results, options) {
   cfgEnableOut.disabled = false;
   document.querySelector('#cfg-add-rule-btn').disabled = false;
   document.querySelector('#cfg-rules-tbody').closest('table').inert = false;
-  if (results !== rawScrapedResults) manualEdits.clear();
+  if (results !== rawScrapedResults) {
+    manualEdits.clear();
+    originalData = results.map(item => ({
+      siteId: item.site.id, origin: 'scraped',
+      rows: JSON.parse(JSON.stringify(item.rows || [])),
+    }));
+  }
   rawScrapedResults = results || [];
   currentOptions = options || {};
   let combined = [];
@@ -321,7 +399,7 @@ function renderTable() {
           <input class="cell-input col-bouquet bouquet-clean" value="${escapeHtml(cleanedBouquet)}" data-idx="${idx}" />
           <strong class="bouquet-total">${row._isAggregated ? '합계 ' : '금액 '}${escapeHtml(row._amountText)}</strong>
           <span class="bouquet-raw" title="${escapeHtml(rawBouquet)}">${escapeHtml(rawBouquet)}</span>
-          ${row._isAggregated ? `<button type="button" class="badge agg btn-view-agg" data-idx="${idx}" style="margin-top: 2px;">합산 ${row._originalOrders.length}건 보기</button>` : ''}
+          ${row._originalOrders.length ? `<button type="button" class="badge agg btn-view-agg" data-idx="${idx}" style="margin-top: 2px;">원본 ${row._originalOrders.length}건 보기</button>` : ''}
         </div>
       </td>
       <td style="text-align: center;">${escapeHtml(row['부토니에'] || '')}</td>
@@ -338,6 +416,11 @@ function renderTable() {
       </td>
     `;
 
+    for (const input of tr.querySelectorAll('.cell-input')) {
+      input.closest('td').classList.add('editable-cell');
+      const header = document.querySelector('#preview-table').tHead.rows[0].cells[input.closest('td').cellIndex];
+      input.setAttribute('aria-label', (idx + 1) + '행 ' + header.textContent.trim());
+    }
     // 인라인 입력 변경 이벤트 바인딩
     tr.querySelector('.col-shipping').addEventListener('input', (e) => {
       row['배송지'] = e.target.value;
@@ -379,7 +462,7 @@ function renderTable() {
     const aggBtn = tr.querySelector('.btn-view-agg');
     if (aggBtn) {
       aggBtn.addEventListener('click', () => {
-        openAggModal(row);
+        openOriginalWindow(row);
       });
     }
 
@@ -405,28 +488,68 @@ function openSmsModal(row) {
 }
 
 /**
- * 합산 주문 상세 모달 열기
+ * 원본 데이터를 독립된 읽기 전용 창으로 표시합니다.
  */
-function openAggModal(row) {
-  const bride = cleanBrideName(row['신부명']);
-  aggModalTitle.textContent = `${bride}신부님 합산 주문 상세 (${row._originalOrders.length}건)`;
-  aggModalList.innerHTML = '';
-
-  row._originalOrders.forEach((orig, idx) => {
-    const div = document.createElement('div');
-    div.className = 'agg-item';
-    div.innerHTML = `
-      <div class="agg-item-header">
-        <span>#${idx + 1} 발주코드: ${escapeHtml(orig['발주코드'] || '-')}</span>
-        <span>금액: ${orig['금액'] === null ? '확인필요' : Number(orig['금액']).toLocaleString('ko-KR') + '원'}</span>
-      </div>
-      <div><strong>상품명:</strong> ${escapeHtml(orig['발주부케'] || '-')}</div>
-      <div style="font-size: 13px; color: var(--muted); margin-top: 4px;"><strong>특이사항:</strong> ${escapeHtml(orig['특이사항(기타사항)'] || orig['특이사항'] || '없음')}</div>
-    `;
-    aggModalList.appendChild(div);
-  });
-
-  aggModal.showModal();
+function openOriginalWindow(row) {
+  const codes = new Set(row?._originalOrders?.map(order => order['발주코드']) || []);
+  let groups = originalData.map(group => ({
+    ...group, rows: row ? group.rows.filter(order =>
+      group.siteId === row._site && codes.has(order['발주코드'])) : group.rows,
+  })).filter(group => group.rows.length);
+  if (row && !groups.length && row._originalOrders?.length) {
+    groups = [{ siteId: row._site || '', origin: 'legacy', rows: row._originalOrders }];
+  }
+  const popup = window.open('', '_blank', 'popup,width=1000,height=800,resizable=yes,scrollbars=yes');
+  if (!popup) {
+    alert('원본 창을 열 수 없습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 눌러 주세요.');
+    return;
+  }
+  popup.opener = null;
+  const doc = popup.document;
+  doc.documentElement.lang = 'ko';
+  doc.documentElement.dataset.theme = document.documentElement.dataset.theme || 'light';
+  doc.title = row ? '이 행의 수집 원본 · 읽기 전용' : '전체 수집 원본 · 읽기 전용';
+  for (const source of document.querySelectorAll('link[rel="stylesheet"]')) {
+    const link = doc.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = source.href;
+    doc.head.append(link);
+  }
+  const style = doc.createElement('style');
+  style.textContent = 'body{margin:0;padding:24px;font-family:system-ui;background:var(--canvas,#f7f8fa);color:var(--text,#202124)}main{max-width:1000px;margin:auto}h1{font-size:22px;margin-bottom:12px}.original-list{display:grid;gap:16px;margin-top:24px}.original-record{padding:18px;border:1px solid var(--line,#ddd);border-radius:10px;background:var(--surface,#fff)}dl{display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px;margin:0}dt{color:var(--muted,#555)}dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}';
+  doc.head.append(style);
+  const main = doc.createElement('main');
+  const title = doc.createElement('h1');
+  title.textContent = doc.title;
+  const note = doc.createElement('p');
+  note.textContent = '창을 연 시점의 수집 원본입니다. 편집 화면과 나란히 놓고 비교할 수 있습니다.';
+  const originalList = doc.createElement('div');
+  originalList.className = 'original-list';
+  main.append(title, note, originalList);
+  doc.body.append(main);
+  if (!groups.length) originalList.textContent = '이 파일에는 수집 원본이 없습니다. 수정된 값을 원본으로 대신 표시하지 않습니다.';
+  for (const group of groups) {
+    const heading = doc.createElement('p');
+    heading.textContent = (group.siteId === 'swed' ? 'S웨딩' : group.siteId === 'ini' ? '아이니웨딩' : '기관 미상') +
+      ' · ' + group.rows.length + '건' + (group.origin === 'legacy' ? ' · 이전 파일에 남아 있는 원본 내역' : '');
+    originalList.append(heading);
+    for (const orig of group.rows) {
+      const div = doc.createElement('div');
+      div.className = 'agg-item original-record';
+      const list = doc.createElement('dl');
+      for (const [key, value] of Object.entries(orig)) {
+        if (key.startsWith('_')) continue;
+        const term = doc.createElement('dt');
+        const content = doc.createElement('dd');
+        term.textContent = key;
+        content.textContent = value == null || value === '' ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+        list.append(term, content);
+      }
+      div.append(list);
+      originalList.append(div);
+    }
+  }
+  popup.focus();
 }
 
 /**
@@ -440,7 +563,7 @@ export function getCurrentRows() {
 // 수집 원본은 최초 변환에만 사용하고, 저장·업로드된 작업은 재합산하지 않습니다.
 export function getWorkspace() {
   return { format: 'ozic-workspace', version: 1, savedAt: new Date().toISOString(),
-    options: currentOptions, rows: currentRows, config: currentConfig };
+    options: currentOptions, originalData, rows: currentRows, config: currentConfig };
 }
 
 export function restoreWorkspace(workspace) {
@@ -455,6 +578,28 @@ export function restoreWorkspace(workspace) {
         !Array.isArray(workspace.config.bouquetRules) ||
         workspace.config.bouquetRules.some(rule => !rule || typeof rule.pattern !== 'string' || typeof rule.replacement !== 'string')))) {
     throw new Error('작업 파일의 데이터 형식을 확인해 주세요.');
+  }
+  if (workspace.originalData != null && (!Array.isArray(workspace.originalData) ||
+      workspace.originalData.some(group => !group || !Array.isArray(group.rows) ||
+        group.rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))))) {
+    throw new Error('원본 데이터 형식을 확인해 주세요.');
+  }
+  originalData = JSON.parse(JSON.stringify(workspace.originalData || []));
+  if (!workspace.originalData) {
+    const groups = new Map();
+    for (const row of workspace.rows) {
+      if (!Array.isArray(row._originalOrders) || !row._originalOrders.length) continue;
+      const siteId = row._site || '';
+      if (!groups.has(siteId)) groups.set(siteId, { siteId, origin: 'legacy', rows: [] });
+      const group = groups.get(siteId);
+      for (const original of row._originalOrders) {
+        if (!original || typeof original !== 'object') continue;
+        if (!original['발주코드'] || !group.rows.some(item => item['발주코드'] === original['발주코드'])) {
+          group.rows.push(JSON.parse(JSON.stringify(original)));
+        }
+      }
+    }
+    originalData = [...groups.values()];
   }
   rawScrapedResults = [];
   manualEdits.clear();

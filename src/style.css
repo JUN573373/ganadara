@@ -225,3 +225,11 @@ input::placeholder { color: var(--muted); opacity: .8; font-size: 11px; }
 @media (max-width: 520px) {
   .accounts-panel .account-card { grid-template-columns: 1fr; gap: 8px; }
 }
+
+.workflow-nav { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.workflow-nav a { padding: 12px 18px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); text-decoration: none; background: var(--surface); }
+.workflow-nav a[aria-current="page"] { background: var(--accent); color: #17232c; font-weight: 700; }
+.workspace-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+#workspace-status { margin-top: 12px; font-size: 13px; line-height: 1.6; }
+#workspace-status[data-error="true"] { color: var(--error); }
+#review-page .rules-panel { margin-top: 20px; }

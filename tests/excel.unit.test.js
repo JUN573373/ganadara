@@ -48,7 +48,7 @@ async function runExcelTests() {
   const wb = await createBaljuWorkbook(aggregated, { orderType: 'WMON' });
 
   // 시트 확인
-  const sheetNames = wb.worksheets.map(s => s.name);
+  const sheetNames = wb.worksheets.filter(s => s.state !== 'veryHidden').map(s => s.name);
   console.log('생성된 시트 목록:', sheetNames);
   assert.ok(sheetNames.includes('9.12(토)'), '9.12(토) 시트 존재 확인');
   assert.ok(sheetNames.includes('9.13(일)'), '9.13(일) 시트 존재 확인');
@@ -81,7 +81,7 @@ async function runExcelTests() {
   ];
   const shootAgg = aggregateOrders(shootOrders, 'swed');
   const shootWb = await createBaljuWorkbook(shootAgg, { orderType: 'RMON' });
-  assert.strictEqual(shootWb.worksheets.length, 1);
+  assert.strictEqual(shootWb.worksheets.filter(s => s.state !== 'veryHidden').length, 1);
   assert.strictEqual(shootWb.worksheets[0].name, '촬영');
   assert.strictEqual(shootWb.worksheets[0].getCell('B2').value, '김소미-S웨딩'); // S웨딩 플래너 표기!
   console.log('✓ RMON 촬영용 단일 시트 및 서식 생성 검증 통과');

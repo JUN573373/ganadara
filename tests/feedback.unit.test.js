@@ -20,7 +20,7 @@ const rows = [...merged, ...aggregateOrders([{ ...a, 발주코드: 'C', 예식�
 const workbook = await createBaljuWorkbook(rows);
 const saved = new ExcelJS.Workbook();
 await saved.xlsx.load(await workbook.xlsx.writeBuffer());
-assert.deepEqual(saved.worksheets.map(s => s.name), ['10.3(토)', '10.4(일)']);
+assert.deepEqual(saved.worksheets.filter(s => s.state !== 'veryHidden').map(s => s.name), ['10.3(토)', '10.4(일)']);
 const sheet = saved.getWorksheet('10.3(토)');
 assert.equal(sheet.getCell('A1').value, '10/3(토)');
 assert.equal(sheet.getCell('A1').font.color.argb, 'FF0070C0');
@@ -28,7 +28,7 @@ assert.equal(sheet.getCell('F3').value, 'S-303 + [추가] 10만원\n합계 190,0
 assert.match(sheet.getCell('H3').value, /내 메모/);
 assert.match(sheet.getCell('H3').value, /배송 메모/);
 assert.equal(sheet.pageSetup.orientation, 'landscape');
-assert.equal(sheet.pageSetup.printArea, 'A1:J3');
+assert.equal(sheet.pageSetup.printArea, 'A1:K3');
 const sms = generateDeliveryMessage(merged[0], { template: '{예식월}월 {예식일}일 ({요일}) {배송시간} {배송지} {이상원코멘트}', includeSangwonComment: true });
 assert.match(sms, /10월 3일 \(토\) 9시 테스트샵/);
 assert.match(sms, /배송 메모/);

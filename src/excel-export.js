@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { attachWorkspaceMetadata } from './workbook-io.js';
 import { cleanBouquetName, cleanBrideName, formatNotes } from './formatter.js';
 
 /**
@@ -31,6 +32,7 @@ function formatDateTitle(sheetName) {
  */
 export async function createBaljuWorkbook(aggregatedRows, options = {}) {
   const { orderType = 'WMON' } = options;
+  for (const row of aggregatedRows) row._rowId ||= row._key || crypto.randomUUID();
   const wb = new ExcelJS.Workbook();
   wb.creator = 'OZIC BLOSSOM';
   wb.created = new Date();
@@ -88,6 +90,8 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
         row['리허설시간'] || '',
       ]);
 
+      dataRow.getCell(orderType === 'RMON' ? 10 : 11).value = row['추가사항'] || '';
+      dataRow.getCell(orderType === 'RMON' ? 11 : 12).value = row._rowId;
       dataRow.height = Math.max(62.45, ...dataRow.values.filter(value => typeof value === 'string').map(value => value.split('\n').length * 23));
       dataRow.eachCell((cell, colNum) => {
         cell.font = { name: '맑은 고딕', size: 16, bold: true };
@@ -100,7 +104,13 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
       });
     });
 
-    sheet.pageSetup.printArea = `A1:I${sheet.rowCount}`;
+    sheet.getCell('J1').value = '추가사항';
+    sheet.getCell('J1').style = { ...sheet.getCell('I1').style };
+    sheet.getColumn(10).width = 55;
+    sheet.getCell('K1').value = '__발주ID';
+    sheet.getColumn(11).hidden = true;
+    sheet.pageSetup.printArea = `A1:J${sheet.rowCount}`;
+    attachWorkspaceMetadata(wb, aggregatedRows, options);
     return wb;
   }
 
@@ -173,6 +183,8 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
         row['예식시간'] || '',
       ]);
 
+      dataRow.getCell(orderType === 'RMON' ? 10 : 11).value = row['추가사항'] || '';
+      dataRow.getCell(orderType === 'RMON' ? 11 : 12).value = row._rowId;
       dataRow.height = Math.max(62.45, ...dataRow.values.filter(value => typeof value === 'string').map(value => value.split('\n').length * 23));
       dataRow.eachCell((cell, colNum) => {
         cell.font = { name: '맑은 고딕', size: colNum === 1 ? 12 : 16, bold: true };
@@ -184,9 +196,15 @@ export async function createBaljuWorkbook(aggregatedRows, options = {}) {
         cell.border = thinBorder;
       });
     });
-    sheet.pageSetup.printArea = `A1:J${sheet.rowCount}`;
+    sheet.getCell('K2').value = '추가사항';
+    sheet.getCell('K2').style = { ...sheet.getCell('J2').style };
+    sheet.getColumn(11).width = 55;
+    sheet.getCell('L2').value = '__발주ID';
+    sheet.getColumn(12).hidden = true;
+    sheet.pageSetup.printArea = `A1:K${sheet.rowCount}`;
   }
 
+  attachWorkspaceMetadata(wb, aggregatedRows, options);
   return wb;
 }
 

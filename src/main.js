@@ -1,8 +1,8 @@
 import './style.css';
 import { SITES, scrapeSite } from './scraper.js';
 import { getWeeklyPresetDates } from './formatter.js';
-import { initEditor, setScrapedData, getCurrentRows } from './editor.js';
-import { downloadBaljuExcel } from './excel-export.js';
+import { initEditor, setScrapedData } from './editor.js';
+import { initWorkflow } from './workflow.js';
 
 const form = document.querySelector('#scrape-form');
 const settings = document.querySelector('#settings');
@@ -23,6 +23,7 @@ let redactions = [];
 
 // 에디터 및 모달 이벤트 등록
 initEditor();
+initWorkflow();
 
 function log(level, message) {
   for (const secret of redactions) {
@@ -196,6 +197,7 @@ form.addEventListener('submit', async (event) => {
       log(incomplete ? 'warn' : 'success', '총 ' + total + '건이 수집되었습니다. 아래 표에서 확인 및 수정한 뒤 엑셀을 내려받을 수 있습니다.');
       // 발주체크 에디터 테이블 렌더링
       setScrapedData(results, runOptions);
+      location.hash = 'review';
     } else {
       log(incomplete ? 'warn' : 'info', incomplete ? '수집이 완료되지 않았습니다. 위 오류 로그를 확인해 주세요.' : '조회 조건에 해당하는 발주가 없어 파일을 생성하지 않습니다.');
     }
@@ -210,24 +212,6 @@ form.addEventListener('submit', async (event) => {
     cancelButton.disabled = true;
     document.querySelector('#start-spinner').hidden = true;
     document.querySelector('#start-label').textContent = '발주 수집 시작';
-  }
-});
-
-downloadButton.addEventListener('click', async () => {
-  const currentRows = getCurrentRows();
-  if (!runOptions || currentRows.length === 0 || controller) return;
-  downloadButton.disabled = true;
-  startButton.disabled = true;
-  try {
-    log('info', '오직블라썸 표준 발주체크 엑셀 파일을 생성하고 있습니다...');
-    await downloadBaljuExcel(currentRows, { orderType: runOptions.type });
-    log('success', '발주체크 엑셀 파일 다운로드가 완료되었습니다.');
-  } catch (err) {
-    console.error(err);
-    log('error', '엑셀 생성에 실패했습니다: ' + err.message);
-  } finally {
-    downloadButton.disabled = false;
-    startButton.disabled = false;
   }
 });
 

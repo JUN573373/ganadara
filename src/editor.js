@@ -22,7 +22,7 @@ const filterNeedsCheckBtn = document.querySelector('#filter-needs-check');
 const smsModal = document.querySelector('#sms-modal');
 const smsModalClose = document.querySelector('#sms-modal-close');
 const smsModalTitle = document.querySelector('#sms-modal-title');
-const smsIncludeSangwon = document.querySelector('#sms-include-sangwon');
+const smsIncludeAdditional = document.querySelector('#sms-include-additional');
 const smsText = document.querySelector('#sms-text');
 const smsCopyBtn = document.querySelector('#sms-copy-btn');
 const smsCopyStatus = document.querySelector('#sms-copy-status');
@@ -63,13 +63,16 @@ export function initEditor() {
   if (smsModalClose) {
     smsModalClose.addEventListener('click', () => smsModal.close());
   }
-  if (smsIncludeSangwon) {
-    smsIncludeSangwon.addEventListener('change', () => {
+  if (smsIncludeAdditional) {
+    smsIncludeAdditional.addEventListener('change', () => {
       if (!activeSmsRow) return;
       smsText.value = generateDeliveryMessage(activeSmsRow, {
-        includeSangwonComment: smsIncludeSangwon.checked,
+        includeAdditional: smsIncludeAdditional.checked,
         template: currentConfig.smsTemplate,
       });
+      activeSmsRow._deliveryDraft = smsText.value;
+      activeSmsRow._includeAdditional = smsIncludeAdditional.checked;
+      document.dispatchEvent(new Event('workspace-change'));
     });
   }
   if (smsCopyBtn) {
@@ -85,6 +88,12 @@ export function initEditor() {
       }
     });
   }
+
+  smsText.addEventListener('input', () => {
+    if (!activeSmsRow) return;
+    activeSmsRow._deliveryDraft = smsText.value;
+    document.dispatchEvent(new Event('workspace-change'));
+  });
 
   // 합산 모달 이벤트
   if (aggModalClose) {
@@ -135,15 +144,19 @@ function initRulesPanel() {
     cfgSmsTemplate.value = currentConfig.smsTemplate || DEFAULT_CONFIG.smsTemplate;
     cfgSmsTemplate.addEventListener('input', () => {
       currentConfig.smsTemplate = cfgSmsTemplate.value;
+      currentRows.forEach(row => { delete row._deliveryDraft; });
       saveConfig(currentConfig);
+      document.dispatchEvent(new Event('workspace-change'));
     });
   }
 
   if (cfgResetSmsBtn) {
     cfgResetSmsBtn.addEventListener('click', () => {
       currentConfig.smsTemplate = DEFAULT_CONFIG.smsTemplate;
+      currentRows.forEach(row => { delete row._deliveryDraft; });
       if (cfgSmsTemplate) cfgSmsTemplate.value = DEFAULT_CONFIG.smsTemplate;
       saveConfig(currentConfig);
+      document.dispatchEvent(new Event('workspace-change'));
       alert('배송안내 문자 양식이 기본값으로 복원되었습니다.');
     });
   }
@@ -211,6 +224,11 @@ function reapplyConfig() {
  * 수집된 원본 데이터를 받아서 합산 정제 후 미리보기 렌더링
  */
 export function setScrapedData(results, options) {
+  document.querySelector('#transform-note').textContent = '수집 원본에 합산·부케 규칙을 적용합니다. 직접 수정한 값은 유지됩니다.';
+  cfgEnableAgg.disabled = false;
+  cfgEnableOut.disabled = false;
+  document.querySelector('#cfg-add-rule-btn').disabled = false;
+  document.querySelector('#cfg-rules-tbody').closest('table').inert = false;
   if (results !== rawScrapedResults) manualEdits.clear();
   rawScrapedResults = results || [];
   currentOptions = options || {};
@@ -223,9 +241,19 @@ export function setScrapedData(results, options) {
     combined = combined.concat(siteAggregated);
   }
 
-  currentRows = combined.map(row => Object.assign(row, manualEdits.get(row._key)));
+  currentRows = combined.map(row => {
+    Object.assign(row, manualEdits.get(row._key));
+    row._rowId = row._key;
+    row._sources = row._originalOrders.map(order => ({
+      siteId: row._site, orderCode: order['발주코드'] || '',
+      // 확인 기능 추가 시 서버에서 대상 요청을 검증하고 구성합니다. 현재는 실행하지 않습니다.
+      confirmation: { status: 'notRequested', request: null },
+    }));
+    return row;
+  });
   renderTable();
   if (resultPanel) resultPanel.hidden = false;
+  document.dispatchEvent(new Event('workspace-change'));
 }
 
 /**
@@ -236,7 +264,7 @@ function renderTable() {
   previewTbody.innerHTML = '';
 
   const totalCount = currentRows.length;
-  const sourceCount = currentRows.reduce((sum, row) => sum + row._originalOrders.length, 0);
+  const sourceCount = currentRows.reduce((sum, row) => sum + (row._originalOrders?.length || 0), 0);
   const aggCount = currentRows.filter(r => r._isAggregated).length;
   const needsCheckCount = currentRows.filter(r => r._needsCheck).length;
 
@@ -258,7 +286,7 @@ function renderTable() {
 
   if (rowsToDisplay.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="14" style="text-align: center; padding: 36px; color: var(--muted);">조회 조건에 해당하는 발주 데이터가 없습니다.</td>`;
+    tr.innerHTML = `<td colspan="13" style="text-align: center; padding: 36px; color: var(--muted);">조회 조건에 해당하는 발주 데이터가 없습니다.</td>`;
     previewTbody.appendChild(tr);
     return;
   }
@@ -303,10 +331,7 @@ function renderTable() {
       <td>${escapeHtml(row['예식장소'] || row['리허설장소'] || '')}</td>
       <td style="text-align: center;">${escapeHtml(row['예식시간'] || row['리허설시간'] || '')}</td>
       <td>
-        <input class="cell-input col-mycomment" placeholder="내 메모" value="${escapeHtml(row.myComment || '')}" data-idx="${idx}" style="min-width: 110px;" />
-      </td>
-      <td>
-        <input class="cell-input col-sangwoncomment" placeholder="코멘트" value="${escapeHtml(row.sangwonComment || '')}" data-idx="${idx}" style="min-width: 110px;" />
+        <textarea class="cell-input col-additional" placeholder="전달받은 추가사항" style="min-width: 220px;">${escapeHtml(row['추가사항'] || '')}</textarea>
       </td>
       <td style="text-align: center;">
         <button type="button" class="button secondary small btn-open-sms" data-idx="${idx}">배송문자 ✉</button>
@@ -335,15 +360,14 @@ function renderTable() {
       row['특이사항(기타사항)'] = e.target.value;
       e.target.classList.add('modified');
     });
-    tr.querySelector('.col-mycomment').addEventListener('input', (e) => {
-      row.myComment = e.target.value;
-      manualEdits.set(row._key, { ...manualEdits.get(row._key), 'myComment': e.target.value });
+    tr.querySelector('.col-additional').addEventListener('input', (e) => {
+      row['추가사항'] = e.target.value;
+      manualEdits.set(row._key, { ...manualEdits.get(row._key), 추가사항: e.target.value });
       e.target.classList.add('modified');
     });
-    tr.querySelector('.col-sangwoncomment').addEventListener('input', (e) => {
-      row.sangwonComment = e.target.value;
-      manualEdits.set(row._key, { ...manualEdits.get(row._key), 'sangwonComment': e.target.value });
-      e.target.classList.add('modified');
+    tr.addEventListener('input', () => {
+      delete row._deliveryDraft;
+      document.dispatchEvent(new Event('workspace-change'));
     });
 
     // 배송문자 버튼
@@ -371,9 +395,9 @@ function openSmsModal(row) {
   const bride = cleanBrideName(row['신부명']);
   const date = row['날짜'] || row['예식일'] || '';
   smsModalTitle.textContent = `${bride}신부님 배송안내 문자 (${date})`;
-  smsIncludeSangwon.checked = false;
-  smsText.value = generateDeliveryMessage(row, {
-    includeSangwonComment: smsIncludeSangwon.checked,
+  smsIncludeAdditional.checked = !!row._includeAdditional;
+  smsText.value = row._deliveryDraft ?? generateDeliveryMessage(row, {
+    includeAdditional: smsIncludeAdditional.checked,
     template: currentConfig.smsTemplate,
   });
   smsCopyStatus.hidden = true;
@@ -410,4 +434,53 @@ function openAggModal(row) {
  */
 export function getCurrentRows() {
   return currentRows;
+}
+
+
+// 수집 원본은 최초 변환에만 사용하고, 저장·업로드된 작업은 재합산하지 않습니다.
+export function getWorkspace() {
+  return { format: 'ozic-workspace', version: 1, savedAt: new Date().toISOString(),
+    options: currentOptions, rows: currentRows, config: currentConfig };
+}
+
+export function restoreWorkspace(workspace) {
+  if (workspace?.format !== 'ozic-workspace' || workspace.version !== 1 ||
+      !Array.isArray(workspace.rows) || workspace.rows.length > 20000 ||
+      workspace.rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+    throw new Error('지원하는 발주 작업 파일이 아닙니다.');
+  }
+  const textFields = ['담당플래너','신부명','날짜','예식일','배송지','배송시간','발주부케','특이사항','추가사항','_cleanedBouquet'];
+  if (workspace.rows.some(row => textFields.some(key => row[key] != null && typeof row[key] !== 'string')) ||
+      (workspace.config && (typeof workspace.config.smsTemplate !== 'string' ||
+        !Array.isArray(workspace.config.bouquetRules) ||
+        workspace.config.bouquetRules.some(rule => !rule || typeof rule.pattern !== 'string' || typeof rule.replacement !== 'string')))) {
+    throw new Error('작업 파일의 데이터 형식을 확인해 주세요.');
+  }
+  rawScrapedResults = [];
+  manualEdits.clear();
+  currentOptions = workspace.options || {};
+  currentRows = workspace.rows.map((row, index) => ({
+    ...row, _key: row._key || row._rowId || String(index),
+    _originalOrders: Array.isArray(row._originalOrders) ? row._originalOrders : [],
+    _sources: Array.isArray(row._sources) ? row._sources : [],
+  }));
+  if (workspace.config) {
+    currentConfig = { ...DEFAULT_CONFIG, ...workspace.config };
+    if (!Array.isArray(currentConfig.bouquetRules)) currentConfig.bouquetRules = DEFAULT_CONFIG.bouquetRules;
+    cfgSmsTemplate.value = currentConfig.smsTemplate;
+    cfgEnableAgg.checked = currentConfig.enableAggregation !== false;
+    cfgEnableOut.checked = currentConfig.enableOutTime !== false;
+    renderRulesTable();
+    saveConfig(currentConfig);
+  }
+  document.querySelector('#transform-note').textContent = '불러온 작업은 엑셀 수정값을 유지하기 위해 자동 재합산·재변환하지 않습니다. 아래 표에서 값을 직접 수정할 수 있습니다.';
+  cfgEnableAgg.disabled = true;
+  cfgEnableOut.disabled = true;
+  document.querySelector('#cfg-add-rule-btn').disabled = true;
+  document.querySelector('#cfg-rules-tbody').closest('table').inert = true;
+  filterNeedsCheckOnly = false;
+  filterNeedsCheckBtn.textContent = '확인필요만 보기';
+  renderTable();
+  resultPanel.hidden = currentRows.length === 0;
+  document.dispatchEvent(new Event('workspace-change'));
 }

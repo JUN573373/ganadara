@@ -294,7 +294,7 @@ export function getWeeklyPresetDates(baseDate = new Date()) {
  * 템플릿(customTemplate) 기반 치환
  */
 export function generateDeliveryMessage(row, options = {}) {
-  const { includeSangwonComment = false, template = null } = options;
+  const { includeSangwonComment = false, includeAdditional = false, template = null } = options;
 
   let dateText = row['날짜'] || row['예식일'] || '';
   let formattedDate = dateText;
@@ -331,7 +331,8 @@ export function generateDeliveryMessage(row, options = {}) {
     발주부케: bouquet, 배송시간: shippingTime || '[배송시간 확인필요]',
     배송지: shippingPlace || '[배송지 확인필요]',
     배송일정: `${shippingTime || '[배송시간 확인필요]'} ${shippingPlace || '[배송지 확인필요]'}`,
-    이상원코멘트: sangwonNote,
+    이상원코멘트: includeAdditional && row['추가사항'] ? '\n※ 안내: ' + row['추가사항'] + '\n' : sangwonNote,
+    추가사항: includeAdditional && row['추가사항'] ? '\n※ 안내: ' + row['추가사항'] + '\n' : '',
   };
   return rawTemplate.replace(/\{([^{}]+)\}/g, (token, key) => fields[key] ?? token).trim();
 }

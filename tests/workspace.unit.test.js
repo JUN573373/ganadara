@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { aggregateOrders, generateDeliveryMessage } from '../src/formatter.js';
+import { createBaljuWorkbook } from '../src/excel-export.js';
+import { importWorkbook } from '../src/workbook-io.js';
+
+const raw = { 발주코드: 'A', 예식일: '2026-10-03', 날짜: '10/03(토)', 담당플래너: '테스트', 신부명: '신부', 배송지: '샵', 배송시간: '9시', 발주부케: 'S-303 - 90,000원' };
+const rows = aggregateOrders([raw, { ...raw, 발주코드: 'B', 발주부케: '[추가] 10만원 - 100,000원' }]);
+rows[0]._sources = [{ siteId: 'ini', orderCode: 'A', confirmation: { status: 'notRequested', request: null } }, { siteId: 'ini', orderCode: 'B', confirmation: { status: 'notRequested', request: null } }];
+const wb = await createBaljuWorkbook(rows);
+const sheet = wb.getWorksheet('10.3(토)');
+// B가 편집한 배송시간·상품·추가사항과 별도 열을 저장한 뒤 다시 읽습니다.
+sheet.getCell('E3').value = '10시';
+sheet.getCell('F3').value = 'VS+\n합계 190,000원';
+sheet.getCell('K3').value = '문 앞에서 연락';
+sheet.getCell('M2').value = '변경 요청';
+sheet.getCell('M3').value = '흰색으로';
+const imported = await importWorkbook(await wb.xlsx.writeBuffer());
+assert.equal(imported.rows.length, 1);
+const row = imported.rows[0];
+assert.equal(row['예식일'], '2026-10-03');
+assert.equal(row['배송시간'], '10시');
+assert.equal(row._cleanedBouquet, 'VS+');
+assert.equal(row['금액'], 190000);
+assert.match(row['추가사항'], /문 앞에서 연락\n변경 요청: 흰색으로/);
+assert.equal(row._originalOrders.length, 2);
+assert.deepEqual(row._sources, rows[0]._sources);
+const sms = generateDeliveryMessage(row, { includeAdditional: true });
+assert.match(sms, /10시 샵/);
+assert.match(sms, /문 앞에서 연락/);
+assert.doesNotMatch(sms, /합계/);
+const again = await importWorkbook(await (await createBaljuWorkbook(imported.rows)).xlsx.writeBuffer());
+assert.equal(again.rows[0]['추가사항'], row['추가사항']);
+assert.equal(again.rows[0]['금액'], 190000);
+// 식별 정보 없는 기존 파일도 편집은 가능하지만 확인 처리 연결은 하지 않습니다.
+wb.removeWorksheet('_발주정보');
+sheet.getCell('L3').value = '';
+const legacy = await importWorkbook(await wb.xlsx.writeBuffer());
+assert.match(legacy.importNotice, /식별 정보/);
+assert.deepEqual(legacy.rows[0]._sources, []);
+console.log('✓ 엑셀 전달→상대방 수정→재업로드→문자→재다운로드 왕복 검증 통과');

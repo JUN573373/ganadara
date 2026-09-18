@@ -184,7 +184,7 @@ function renderRulesTable() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><input class="rules-input rule-pattern" value="${escapeHtml(rule.pattern)}" placeholder="예: VS플러스" data-idx="${idx}" /></td>
-      <td style="text-align: center; color: var(--muted); font-size: 10px;">➔</td>
+      <td style="text-align: center; color: var(--muted); font-size: 13px;">➔</td>
       <td><input class="rules-input rule-replacement" value="${escapeHtml(rule.replacement)}" placeholder="예: VS+" data-idx="${idx}" /></td>
       <td style="text-align: center;"><button type="button" class="rules-del-btn" data-idx="${idx}" title="삭제">✕</button></td>
     `;
@@ -421,7 +421,7 @@ function openAggModal(row) {
         <span>금액: ${orig['금액'] === null ? '확인필요' : Number(orig['금액']).toLocaleString('ko-KR') + '원'}</span>
       </div>
       <div><strong>상품명:</strong> ${escapeHtml(orig['발주부케'] || '-')}</div>
-      <div style="font-size: 11px; color: var(--muted); margin-top: 4px;"><strong>특이사항:</strong> ${escapeHtml(orig['특이사항(기타사항)'] || orig['특이사항'] || '없음')}</div>
+      <div style="font-size: 13px; color: var(--muted); margin-top: 4px;"><strong>특이사항:</strong> ${escapeHtml(orig['특이사항(기타사항)'] || orig['특이사항'] || '없음')}</div>
     `;
     aggModalList.appendChild(div);
   });

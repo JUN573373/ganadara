@@ -70,6 +70,7 @@ export default async function handler(req, res) {
       }
 
       const session = new ScrapeSession(siteDef);
+      session.onLog = (level, message) => sendEvent('log', { level, message });
 
       try {
         sendEvent('log', { level: 'info', message: `${siteDef.label} · 로그인 진행 중...` });

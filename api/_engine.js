@@ -1,3 +1,4 @@
+import { withNetworkRetry, httpError } from '../src/network.js';
 import * as cheerio from 'cheerio';
 import { CookieJar } from 'tough-cookie';
 
@@ -29,12 +30,10 @@ export class ScrapeSession {
     this.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36';
   }
 
-  async request(method, path, body = null, retryCount = 1) {
+  async request(method, path, body = null, redirectCount = 0) {
     const url = path.startsWith('http') ? path : `${this.site.baseUrl}${path}`;
-    let lastError = null;
-
-    for (let attempt = 0; attempt <= retryCount; attempt++) {
-      try {
+    if (redirectCount > 10) throw new Error('리다이렉트 횟수를 초과했습니다.');
+    const result = await withNetworkRetry(async signal => {
         const cookieHeader = await this.cookieJar.getCookieString(url);
         const headers = {
           'User-Agent': this.userAgent,
@@ -61,6 +60,7 @@ export class ScrapeSession {
           method: method.toUpperCase(),
           headers,
           body: method.toUpperCase() === 'GET' ? undefined : requestBody,
+          signal,
           redirect: 'manual', // 수동 리다이렉트 처리로 Set-Cookie 보존
         });
 
@@ -79,25 +79,29 @@ export class ScrapeSession {
           const location = response.headers.get('location');
           if (location) {
             const nextUrl = new URL(location, url).toString();
-            return await this.request('GET', nextUrl, null, retryCount);
+            await response.body?.cancel();
+            return { nextUrl, preserveMethod: [307, 308].includes(response.status) };
           }
         }
 
         if (!response.ok && response.status !== 200) {
-          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+          await response.body?.cancel();
+          throw httpError(response.status);
         }
 
         const responseText = await response.text();
-        return responseText;
-      } catch (err) {
-        lastError = err;
-        if (attempt < retryCount) {
-          await new Promise((r) => setTimeout(r, 400));
+        if (!responseText.trim()) {
+          const error = new Error('기관에서 빈 응답을 받았습니다.');
+          error.retryable = true;
+          throw error;
         }
-      }
+        return { text: responseText };
+    }, { onRetry: attempt => this.onLog?.('warn', `통신 실패 · 재시도 ${attempt}/2`) });
+    if (result.nextUrl) {
+      return this.request(result.preserveMethod ? method : 'GET', result.nextUrl,
+        result.preserveMethod ? body : null, redirectCount + 1);
     }
-
-    throw lastError || new Error(`통신 실패: ${url}`);
+    return result.text;
   }
 
   async login(id, password) {

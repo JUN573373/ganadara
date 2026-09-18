@@ -7,6 +7,7 @@ export function initWorkflow() {
   const upload = document.querySelector('#workspace-file');
   const download = document.querySelector('#download-button');
   let restoring = false;
+  document.querySelector('#open-workspace').addEventListener('click', () => upload.click());
 
   const showPage = () => {
     const review = location.hash === '#review';

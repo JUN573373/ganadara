@@ -100,12 +100,12 @@
           <h2>전달받은 엑셀로 작업 이어가기</h2>
           <p class="section-description">수집 결과를 정리해 엑셀로 전달하고, 수정받은 파일을 다시 열어 추가사항과 배송문자를 확인하세요.</p>
           <div class="workspace-actions">
-            <label class="button secondary" for="workspace-file">엑셀 / JSON 열기</label>
-            <input id="workspace-file" type="file" accept=".xlsx,.json" class="sr-only" />
+            <button id="open-workspace" type="button" class="button secondary">엑셀 / JSON 열기</button>
+            <input id="workspace-file" aria-label="엑셀 또는 JSON 파일 선택" type="file" accept=".xlsx,.json" class="sr-only" />
             <button id="backup-workspace" type="button" class="button secondary">작업 JSON 저장</button>
             <button id="clear-workspace" type="button" class="button secondary">저장된 작업 지우기</button>
           </div>
-          <p class="field-note">현재 작업은 이 브라우저에 자동 저장됩니다. 다른 기기에서 이어가거나 장기간 보관할 때는 JSON 파일도 저장해 주세요. 계정 정보는 포함되지 않습니다.</p>
+          <p class="field-note">현재 작업은 이 브라우저에 자동 저장됩니다.<br>다른 기기에서 이어가려면 JSON 파일을 저장해 주세요. 계정 정보는 저장하지 않습니다.</p>
           <p id="workspace-status" role="status">수집을 시작하거나 전달받은 엑셀 파일을 열어 주세요.</p>
         </section>
           <!-- 03 세부 변환 설정 (합산 기준, 부케 표기, 배송문자) -->
@@ -113,7 +113,7 @@
             <div class="rules-header">
               <div class="section-heading">
                 <span class="step">03</span>
-                <h2 id="rules-title">세부 변환 설정 <small style="font-size: 11px; font-weight: normal; color: var(--muted);">(합산 기준 · 부케 표기 · 배송문자)</small></h2>
+                <h2 id="rules-title">세부 변환 설정 <small style="font-weight: normal; color: var(--muted);">(합산 기준 · 부케 표기 · 배송문자)</small></h2>
               </div>
               <button id="toggle-rules-btn" class="button secondary small" type="button" aria-expanded="true" aria-controls="rules-body">설정 접기 ✕</button>
             </div>
@@ -122,7 +122,7 @@
               <p class="section-description">합산 금액은 발주부케와 함께 엑셀에 표시됩니다. 본식은 예식일별 탭과 좌측 상단 날짜를 생성하고, 촬영은 한 시트로 출력합니다. 전달받은 엑셀의 추가사항은 별도 열에서 확인하고 수정할 수 있습니다.</p>
               <div class="rules-grid">
                 <div>
-                  <h3 style="font-size: 13px; margin-bottom: 12px;">합산 및 정제 옵션</h3>
+                  <h3 style="margin-bottom: 12px;">합산 및 정제 옵션</h3>
                   <p id="transform-note" class="field-note">수집 원본에 적용하는 변환 설정입니다.</p>
                   <div class="options-group">
                     <label class="check-option">
@@ -135,20 +135,20 @@
                     </label>
                   </div>
 
-                  <h3 style="font-size: 13px; margin-top: 20px; margin-bottom: 8px;">배송안내 문자 공통 템플릿</h3>
-                  <p style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">각 행의 ‘배송문자’ 버튼 → 아래 양식에 실제 데이터를 대입 → 수정 후 복사합니다. 자동 발송은 하지 않습니다.<br>사용 항목: {예식일자}, {신부명}, {발주부케}, {배송시간}, {배송지}, {배송일정}, {추가사항}<br>배송일정은 배송시간 + 배송지입니다. 아웃 시간과 별개이며, 누락된 값은 확인필요로 표시됩니다.</p>
-                  <textarea id="cfg-sms-template" class="sms-textarea" rows="7" style="font-size: 11px;"></textarea>
+                  <h3 style="margin-top: 20px; margin-bottom: 8px;">배송안내 문자 공통 템플릿</h3>
+                  <p class="rules-help">각 행의 ‘배송문자’ 버튼 → 아래 양식에 실제 데이터를 대입 → 수정 후 복사합니다. 자동 발송은 하지 않습니다.<br>사용 항목: {예식일자}, {신부명}, {발주부케}, {배송시간}, {배송지}, {배송일정}, {추가사항}<br>배송일정은 배송시간 + 배송지입니다. 아웃 시간과 별개이며, 누락된 값은 확인필요로 표시됩니다.</p>
+                  <textarea id="cfg-sms-template" class="sms-textarea" rows="10"></textarea>
                   <div style="margin-top: 6px; text-align: right;">
-                    <button id="cfg-reset-sms-btn" class="button secondary small" type="button" style="font-size: 10px;">문자 양식 기본값 복원</button>
+                    <button id="cfg-reset-sms-btn" class="button secondary small" type="button" style="">문자 양식 기본값 복원</button>
                   </div>
                 </div>
 
                 <div>
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 style="font-size: 13px; margin: 0;">부케 표기 변환 규칙 표</h3>
-                    <button id="cfg-add-rule-btn" class="button secondary small" type="button" style="font-size: 10px;">+ 규칙 추가</button>
+                    <h3 style="margin: 0;">부케 표기 변환 규칙 표</h3>
+                    <button id="cfg-add-rule-btn" class="button secondary small" type="button" style="">+ 규칙 추가</button>
                   </div>
-                  <p style="font-size: 11px; color: var(--muted); margin-bottom: 8px;">상품마다 위에서부터 적용합니다. 예: VS플러스 → VS+, BL- → $CODE(BL-03 유지). 여러 주문은 각각 변환한 뒤 함께 표시합니다.</p>
+                  <p class="rules-help">상품마다 위에서부터 적용합니다. 예: VS플러스 → VS+, BL- → $CODE(BL-03 유지). 여러 주문은 각각 변환한 뒤 함께 표시합니다.</p>
                   
                   <div class="rules-table-container">
                     <table class="rules-table">

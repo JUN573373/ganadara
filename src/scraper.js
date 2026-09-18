@@ -1,3 +1,4 @@
+import { withNetworkRetry, httpError } from './network.js';
 import { parseOrderList, parseContract } from './extraction.js';
 
 export const SITES = [
@@ -12,7 +13,7 @@ export const SITES = [
  */
 export async function scrapeSite({ site, account, options, signal, log, onRow }) {
   try {
-    return await scrapeViaServerlessApi({ site, account, options, signal, log, onRow });
+    return await withNetworkRetry(requestSignal => scrapeViaServerlessApi({ site, account, options, signal: requestSignal, log, onRow }), { signal, timeoutMs: 90000, onRetry: attempt => log('warn', site.label + ' · 서버 통신 재시도 ' + attempt + '/2') });
   } catch (apiErr) {
     if (signal?.aborted || apiErr.name === 'AbortError') {
       throw apiErr;
@@ -59,8 +60,8 @@ async function scrapeViaServerlessApi({ site, account, options, signal, log, onR
   }
 
   if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    throw new Error(`서버 수집 API 오류 (HTTP ${response.status}): ${errText || response.statusText}`);
+    await response.body?.cancel();
+    throw httpError(response.status);
   }
 
   const reader = response.body.getReader();
@@ -103,7 +104,9 @@ async function scrapeViaServerlessApi({ site, account, options, signal, log, onR
   }
 
   if (!finalDoneData) {
-    throw new Error(`${site.label} · 서버에서 최종 수집 완료 응답을 받지 못했습니다.`);
+    const error = new Error(`${site.label} · 서버에서 최종 수집 완료 응답을 받지 못했습니다.`);
+    error.retryable = true;
+    throw error;
   }
 
   const siteResults = finalDoneData.results?.[site.id] || [];
@@ -125,30 +128,23 @@ async function scrapeDirectBrowser({ site, account, options, signal, log, onRow 
   const request = async (stage, path, body) => {
     signal.throwIfAborted();
     log('info', site.label + ' · ' + stage);
-    const timeout = AbortSignal.timeout(30000);
-    try {
+    return withNetworkRetry(async requestSignal => {
       const response = await fetch(site.baseUrl + path, {
-        method: body ? 'POST' : 'GET',
-        body,
-        mode: 'cors',
-        credentials: 'include',
-        redirect: 'follow',
-        signal: AbortSignal.any([signal, timeout]),
+        method: body ? 'POST' : 'GET', body, mode: 'cors', credentials: 'include',
+        redirect: 'follow', signal: requestSignal,
       });
       if (!response.ok) {
-        throw new Error('HTTP ' + response.status + ' 응답입니다. 기관 접근 권한이나 서버 상태를 확인해 주세요.');
+        await response.body?.cancel();
+        throw httpError(response.status);
       }
       const html = await response.text();
-      if (!html.trim()) throw new Error('기관에서 빈 응답을 받았습니다.');
-      return html;
-    } catch (error) {
-      if (signal.aborted) throw signal.reason;
-      if (timeout.aborted) throw new Error(site.label + ' · ' + stage + ': 응답 대기 시간 30초를 초과했습니다.');
-      if (error instanceof TypeError) {
-        throw new Error(site.label + ' · ' + stage + ': 브라우저에서 응답을 읽지 못했습니다. CORS·쿠키 정책, 네트워크 또는 인증서 문제가 원인일 수 있습니다. 개발자 도구의 네트워크·콘솔에서 확인해 주세요.');
+      if (!html.trim()) {
+        const error = new Error('기관에서 빈 응답을 받았습니다.');
+        error.retryable = true;
+        throw error;
       }
-      throw new Error(site.label + ' · ' + stage + ': ' + error.message);
-    }
+      return html;
+    }, { signal, onRetry: attempt => log('warn', site.label + ' · ' + stage + ' · 재시도 ' + attempt + '/2') });
   };
 
   await request('기관 접속', '/');
